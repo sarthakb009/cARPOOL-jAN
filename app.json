@@ -20,11 +20,8 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.tribhuwanshubham.CarpoolingApp",
-
       "config": {
-
         "googleMaps": { "apiKey": "AIzaSyBK2rAhuWLsXyJ-M28srUzYxNmK1nIPWuE" }
-
       }
     },
     "web": {

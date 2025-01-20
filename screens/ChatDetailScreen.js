@@ -1,105 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
 import { Box, VStack, HStack, Input, Icon, Text, Avatar, Pressable, Spinner } from 'native-base';
-import { Ionicons, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MotiView, MotiText } from 'moti';
-import { Easing } from 'react-native-reanimated';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ProfileModal from '../components/ProfileModal';
-
-// Dummy profile data
-const dummyDriverProfile = {
-  name: "John Driver",
-  avatar: "https://randomuser.me/api/portraits/men/1.jpg",
-  rating: 4.8,
-  totalRides: 156,
-  verificationStatus: true,
-  vehicles: [
-    {
-      type: "Car",
-      make: "Toyota",
-      model: "Camry",
-      year: "2020",
-      color: "Silver",
-      plateNumber: "ABC 123",
-      isDefault: true,
-    },
-    {
-      type: "Car",
-      make: "Honda",
-      model: "Civic",
-      year: "2019",
-      color: "Black",
-      plateNumber: "XYZ 789",
-      isDefault: false,
-    }
-  ],
-  preferences: {
-    smoking: false,
-    music: true,
-    ac: true,
-    pets: false
-  },
-  stats: {
-    completedRides: 156,
-    totalDistance: "2,345 km",
-    averageRating: 4.8,
-    onTimePercentage: 98
-  },
-  badges: [
-    {
-      type: "gold",
-      title: "Top Driver",
-      description: "Maintained 4.8+ rating for 3 months"
-    },
-    {
-      type: "silver",
-      title: "Road Warrior",
-      description: "Completed 150+ rides"
-    },
-    {
-      type: "bronze",
-      title: "Punctual Pro",
-      description: "98% on-time arrival"
-    }
-  ]
-};
-
-const dummyPassengerProfile = {
-  name: "Sarah Passenger",
-  avatar: "https://randomuser.me/api/portraits/women/1.jpg",
-  rating: 4.6,
-  totalRides: 42,
-  verificationStatus: true,
-  preferences: {
-    musicPreference: "Any Genre",
-    chatPreference: "Friendly Chat",
-    seatingPreference: "Front Seat"
-  },
-  stats: {
-    completedRides: 42,
-    averageRating: 4.6,
-    onTimePercentage: 95,
-    cancelRate: "2%"
-  },
-  badges: [
-    {
-      type: "gold",
-      title: "Perfect Passenger",
-      description: "Maintained 4.5+ rating"
-    },
-    {
-      type: "silver",
-      title: "Regular Rider",
-      description: "Completed 40+ rides"
-    }
-  ]
-};
 
 const ChatDetailScreen = ({ route, navigation }) => {
-  const { rideId, name, avatar, role } = route.params;
+  const { rideId, name } = route.params;
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [rideDetails, setRideDetails] = useState(null);
@@ -108,7 +15,6 @@ const ChatDetailScreen = ({ route, navigation }) => {
   const [driverId, setDriverId] = useState(null);
   const [passengerId, setPassengerId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showProfile, setShowProfile] = useState(false);
   const scrollViewRef = useRef();
 
   useEffect(() => {
@@ -219,273 +125,105 @@ const ChatDetailScreen = ({ route, navigation }) => {
     return new Date(dateString).toLocaleTimeString(undefined, options);
   };
 
-  const renderMessage = (message, index) => {
-    const isMyMessage = message.senderId === currentUserId?.toString();
-    return (
-      <MotiView
-        from={{ opacity: 0, translateY: 20 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{
-          type: 'timing',
-          duration: 300,
-          delay: index * 50,
-          easing: Easing.out(Easing.ease),
-        }}
-        style={[
-          styles.messageContainer,
-          isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
-        ]}
-      >
-        <Box
-          bg={isMyMessage ? 'black' : 'white'}
-          p={4}
-          borderRadius="2xl"
-          maxW="80%"
-          style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myMessageBubble : styles.theirMessageBubble
-          ]}
-        >
-          <Text
-            color={isMyMessage ? 'white' : 'gray.800'}
-            fontSize="sm"
-          >
-            {message.message}
-          </Text>
-          <HStack space={1} alignItems="center" mt={1}>
-            <Text
-              fontSize="2xs"
-              color={isMyMessage ? 'gray.300' : 'gray.500'}
-            >
-              {formatTime(message.dateTime)}
-            </Text>
-            {isMyMessage && (
-              <Icon
-                as={MaterialIcons}
-                name="done-all"
-                size={3}
-                color={message.status === 'READ' ? 'blue.400' : 'gray.400'}
-              />
-            )}
-          </HStack>
-        </Box>
-      </MotiView>
-    );
-  };
-
   if (isLoading) {
     return (
-      <Box flex={1} justifyContent="center" alignItems="center" bg="white">
-        <Spinner size="lg" color="black" />
+      <Box flex={1} justifyContent="center" alignItems="center">
+        <Spinner size="lg" />
       </Box>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={['#000000', '#1a1a1a']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingVertical: 12 }]}
-      >
-        <HStack alignItems="center" justifyContent="space-between">
-          <HStack space={2} alignItems="center" flex={1}>
-            <Pressable
-              onPress={() => navigation.goBack()}
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.7 : 1,
-                transform: [{ scale: pressed ? 0.97 : 1 }],
-              })}
-            >
-              <Icon as={Ionicons} name="arrow-back" size={5} color="white" />
-            </Pressable>
-            <Pressable
-              onPress={() => setShowProfile(true)}
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.7 : 1,
-                transform: [{ scale: pressed ? 0.97 : 1 }],
-                flex: 1,
-              })}
-            >
-              <HStack space={2} alignItems="center">
-                <Box position="relative">
-                  <Avatar
-                    source={{ uri: avatar }}
-                    size="xs"
-                    borderWidth={1.5}
-                    borderColor="white"
-                  >
-                    {name?.charAt(0)}
-                  </Avatar>
-                  <Box
-                    position="absolute"
-                    bottom={0}
-                    right={0}
-                    bg="green.500"
-                    w={2}
-                    h={2}
-                    rounded="full"
-                    borderWidth={1}
-                    borderColor="white"
-                  />
-                </Box>
-                <VStack flex={1}>
-                  <Text color="white" fontSize="sm" fontWeight="600" numberOfLines={1}>
-                    {name}
-                  </Text>
-                  <Text color="gray.300" fontSize="2xs" letterSpacing="sm">
-                    {role.charAt(0) + role.slice(1).toLowerCase()}
-                  </Text>
-                </VStack>
-              </HStack>
-            </Pressable>
-          </HStack>
-          <HStack space={3}>
-            <Pressable
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Icon as={Ionicons} name="call" size={5} color="white" />
-            </Pressable>
-            <Pressable
-              onPress={() => setShowProfile(true)}
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <Icon as={Ionicons} name="information-circle-outline" size={5} color="white" />
-            </Pressable>
-          </HStack>
+      <Box style={styles.header}>
+        <HStack alignItems="center" space={3}>
+          <Pressable onPress={() => navigation.goBack()}>
+            <Icon as={Ionicons} name="arrow-back" size={6} color="white" />
+          </Pressable>
+          <Avatar
+            source={{ uri: 'https://randomuser.me/api/portraits/men/1.jpg' }}
+            size="sm"
+            borderWidth={2}
+            borderColor="white"
+          />
+          <VStack>
+            <Text style={styles.headerTitle}>{name}</Text>
+            <Text style={styles.headerSubtitle}>{currentUserType === 'DRIVER' ? 'Passenger' : 'Driver'}</Text>
+          </VStack>
         </HStack>
-      </LinearGradient>
-
-      <ProfileModal
-        isOpen={showProfile}
-        onClose={() => setShowProfile(false)}
-        userData={role === 'DRIVER' ? dummyDriverProfile : dummyPassengerProfile}
-        userType={role}
-      />
+        <HStack space={4}>
+          <TouchableOpacity>
+            <Icon as={Ionicons} name="call" size={6} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Icon as={Ionicons} name="information-circle-outline" size={6} color="white" />
+          </TouchableOpacity>
+        </HStack>
+      </Box>
 
       {rideDetails && (
-        <Box
-          bg="white"
-          py={2}
-          px={3}
-          borderBottomWidth={1}
-          borderBottomColor="gray.100"
-          shadow={1}
-        >
-          <HStack space={3} alignItems="center">
-            <Box
-              bg="gray.50"
-              p={1.5}
-              borderRadius="lg"
-              borderWidth={1}
-              borderColor="gray.100"
-            >
-              <Icon as={FontAwesome5} name="route" size={4} color="black" />
-            </Box>
-            <VStack flex={1} space={0.5}>
-              <HStack space={2} alignItems="center">
-                <Text fontSize="2xs" color="gray.500" fontWeight="medium">FROM</Text>
-                <Text fontSize="xs" color="gray.700" fontWeight="600" flex={1} numberOfLines={1}>
-                  {rideDetails.source}
-                </Text>
-              </HStack>
-              <HStack space={2} alignItems="center">
-                <Text fontSize="2xs" color="gray.500" fontWeight="medium">TO</Text>
-                <Text fontSize="xs" color="gray.700" fontWeight="600" flex={1} numberOfLines={1}>
-                  {rideDetails.destination}
-                </Text>
-              </HStack>
-            </VStack>
-            <VStack alignItems="flex-end" space={0.5}>
-              <HStack space={1} alignItems="center">
-                <Icon as={FontAwesome5} name="calendar-alt" size={2.5} color="gray.500" />
-                <Text fontSize="2xs" color="gray.600">{formatDate(rideDetails.rideDate)}</Text>
-              </HStack>
-              <HStack space={1} alignItems="center">
-                <Icon as={FontAwesome5} name="clock" size={2.5} color="gray.500" />
-                <Text fontSize="2xs" color="gray.600">
-                  {formatTime(rideDetails.rideScheduledStartTime || rideDetails.rideDate)}
-                </Text>
-              </HStack>
-            </VStack>
+        <Box bg="white" py={2} px={4} borderBottomWidth={1} borderBottomColor="gray.200">
+          <HStack justifyContent="space-between" alignItems="center">
+            <HStack space={2} alignItems="center" flex={1}>
+              <Icon as={Feather} name="map-pin" size={4} color="black" />
+              <Text fontSize="xs" numberOfLines={1} flex={1}>{rideDetails.source} → {rideDetails.destination}</Text>
+            </HStack>
+            <HStack space={2} alignItems="center">
+              <Icon as={Feather} name="calendar" size={4} color="black" />
+              <Text fontSize="xs">{formatDate(rideDetails.rideDate)}</Text>
+              <Icon as={Feather} name="clock" size={4} color="black" />
+              <Text fontSize="xs">{formatTime(rideDetails.rideScheduledStartTime || rideDetails.rideDate)}</Text>
+            </HStack>
           </HStack>
         </Box>
       )}
 
       <ScrollView
         ref={scrollViewRef}
-        contentContainerStyle={[styles.scrollContainer, { paddingHorizontal: 12 }]}
+        contentContainerStyle={styles.scrollContainer}
         onContentSizeChange={() => scrollViewRef.current.scrollToEnd({ animated: true })}
       >
-        {messages.map((message, index) => renderMessage(message, index))}
-      </ScrollView>
-
-      <Box
-        bg="white"
-        p={3}
-        borderTopWidth={1}
-        borderTopColor="gray.100"
-        shadow={3}
-        style={{
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 3,
-          elevation: 4,
-        }}
-      >
-        <HStack space={2} alignItems="center">
-          <Input
-            flex={1}
-            placeholder="Type a message"
-            value={newMessage}
-            onChangeText={setNewMessage}
-            variant="filled"
-            bg="gray.100"
-            borderRadius="xl"
-            borderWidth={1}
-            borderColor="gray.200"
-            placeholderTextColor="gray.400"
-            color="gray.800"
-            py={2}
-            px={3}
-            fontSize="xs"
-            InputLeftElement={
-              <Pressable
-                onPress={() => {}}
-                ml={2}
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.7 : 1,
-                })}
-              >
-                <Icon as={Ionicons} name="happy-outline" size={5} color="gray.400" />
-              </Pressable>
-            }
-          />
-          <Pressable
-            onPress={handleSendMessage}
-            disabled={!currentUserId || !rideDetails || !newMessage.trim()}
-            style={({ pressed }) => ({
-              opacity: (!currentUserId || !rideDetails || !newMessage.trim() || pressed) ? 0.7 : 1,
-              transform: [{ scale: pressed ? 0.97 : 1 }],
-            })}
+        {messages.map((message, index) => (
+          <Box
+            key={message.id}
+            style={[
+              message.senderId === currentUserId.toString() ? styles.myMessage : styles.theirMessage,
+              index === 0 ? { marginTop: 10 } : {}
+            ]}
           >
-            <Box
-              bg={(!currentUserId || !rideDetails || !newMessage.trim()) ? "gray.400" : "black"}
-              p={2.5}
-              borderRadius="lg"
-              shadow={1}
-            >
-              <Icon as={Ionicons} name="send" size={4} color="white" />
-            </Box>
-          </Pressable>
-        </HStack>
-      </Box>
+            <Text style={styles.messageText}>{message.message}</Text>
+            <HStack justifyContent="flex-end" alignItems="center" space={1}>
+              <Text style={styles.messageTime}>{formatTime(message.dateTime)}</Text>
+              {message.senderId === currentUserId.toString() && (
+                <Icon as={Ionicons} name="checkmark-done" size={3} color="gray.500" />
+              )}
+            </HStack>
+          </Box>
+        ))}
+      </ScrollView>
+      <HStack space={2} alignItems="center" p={4} bg="white" borderTopWidth={1} borderTopColor="gray.200">
+        <Input
+          flex={1}
+          placeholder="Type a message"
+          value={newMessage}
+          onChangeText={setNewMessage}
+          variant="filled"
+          bg="gray.100"
+          borderRadius="full"
+          placeholderTextColor="gray.400"
+          color="black"
+          py={2}
+          px={4}
+          InputLeftElement={
+            <Icon as={Ionicons} name="happy-outline" size={5} color="gray.400" ml={2} />
+          }
+        />
+        <TouchableOpacity onPress={handleSendMessage} disabled={!currentUserId || !rideDetails}>
+          <Box bg={currentUserId && rideDetails ? "black" : "gray.400"} p={2} borderRadius="full">
+            <Icon as={Ionicons} name="send" size={5} color="white" />
+          </Box>
+        </TouchableOpacity>
+      </HStack>
     </SafeAreaView>
   );
 };
@@ -497,68 +235,53 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0
   },
   header: {
-    padding: 12,
-    paddingTop: Platform.OS === "ios" ? 45 : 12,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: Platform.OS === "ios" ? 50 : 16,
+    backgroundColor: 'black',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   scrollContainer: {
+    padding: 16,
+  },
+  myMessage: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#f0f0f0',
     padding: 12,
-    paddingBottom: 24,
-  },
-  messageContainer: {
-    marginBottom: 12,
-  },
-  myMessageContainer: {
-    alignItems: 'flex-end',
-  },
-  theirMessageContainer: {
-    alignItems: 'flex-start',
-  },
-  messageBubble: {
-    maxWidth: '75%',
-  },
-  myMessageBubble: {
-    backgroundColor: 'black',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderBottomLeftRadius: 16,
+    borderRadius: 20,
     borderBottomRightRadius: 4,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-    padding: 12,
+    marginBottom: 10,
+    maxWidth: '80%',
   },
-  theirMessageBubble: {
+  theirMessage: {
+    alignSelf: 'flex-start',
     backgroundColor: 'white',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
     padding: 12,
+    borderRadius: 20,
+    borderBottomLeftRadius: 4,
+    marginBottom: 10,
+    maxWidth: '80%',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  messageText: {
+    fontSize: 16,
+    marginBottom: 4,
+    color: '#333',
+  },
+  messageTime: {
+    fontSize: 11,
+    color: 'gray',
   },
 });
 

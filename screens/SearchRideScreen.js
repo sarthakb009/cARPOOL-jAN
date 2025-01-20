@@ -1,33 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { ScrollView, Alert, TouchableOpacity, Platform } from 'react-native';
-import {
-  Box,
-  Heading,
-  VStack,
-  Text,
-  HStack,
-  Icon,
-  Switch,
-  Button,
-  Modal,
-  useTheme
+import { 
+  Box, 
+  Heading, 
+  VStack, 
+  Text, 
+  HStack, 
+  Icon, 
+  Switch, 
+  Button 
 } from 'native-base';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { styles } from '../components/sharedComponents';
-import { format, parse } from 'date-fns';
-import Calendar from 'react-native-calendar-picker';
-
-// Import your custom components properly
-import { 
-  CustomInput, 
-  CustomButton, 
-  CarouselItem, 
-  RecentSearchItem 
-} from '../components/sharedComponents';
-import TimePickerModal from './TimePickerModal';
+import { styles, CustomInput, CustomButton, CarouselItem, RecentSearchItem } from '../components/sharedComponents';
 
 const HERE_API_KEY = 'BLiCQHHuN3GFygSHe27hv4rRBpbto7K35v7HXYtANC8';
 
@@ -92,12 +79,6 @@ const SearchRideScreen = () => {
   const [selectedDays, setSelectedDays] = useState([]);
   const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-  // Add these state variables
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedTime, setSelectedTime] = useState(format(new Date(), 'HH:mm'));
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
   useEffect(() => {
     const initializeScreen = async () => {
       try {
@@ -112,13 +93,14 @@ const SearchRideScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (route.params && route.params.address) {
+    if (route.params?.address) {
+      const locationData = route.params.address;
       if (route.params.isPickup) {
-        setPickupLocation(route.params.address);
-        setPickupCoords(null);
+        setPickupLocation(locationData);
+        setPickupCoords(locationData.coordinates);
       } else {
-        setDropLocation(route.params.address);
-        setDropCoords(null);
+        setDropLocation(locationData);
+        setDropCoords(locationData.coordinates);
       }
     }
   }, [route.params]);
@@ -148,7 +130,7 @@ const SearchRideScreen = () => {
     };
 
     try {
-      let searches = recentSearches.filter(search =>
+      let searches = recentSearches.filter(search => 
         !(search.from === searchEntry.from && search.to === searchEntry.to)
       );
       searches.unshift(searchEntry);
@@ -168,12 +150,14 @@ const SearchRideScreen = () => {
       return;
     }
 
+    if (isRecurring && selectedDays.length === 0) {
+      Alert.alert('Error', 'Please select at least one weekday for recurring searches');
+      return;
+    }
+
     setLoading(true);
     try {
-      const formattedDate = format(selectedDate, 'yyyy-MM-dd');
-      const formattedTime = `${selectedTime}:00`;
-      const formattedDateTime = `${formattedDate}T${formattedTime}`;
-
+      // Store the details in local storage
       await storeLocationDetails({
         startLocation: pickupLocation.address,
         startLatitude: pickupLocation.coordinates.lat,
@@ -181,26 +165,16 @@ const SearchRideScreen = () => {
         endLocation: dropLocation.address,
         endLatitude: dropLocation.coordinates.lat,
         endLongitude: dropLocation.coordinates.lng,
-        rideDate: formattedDate,
-        rideTime: formattedTime
       });
 
       await saveRecentSearches();
 
-      navigation.navigate('RideList', {
+      // Pass recurring information if needed in future API calls
+      navigation.navigate('RideList', { 
         pickupLocation: pickupLocation.address,
         dropLocation: dropLocation.address,
-        pickupCoords: {
-          lat: Number(pickupLocation.coordinates.lat),
-          lng: Number(pickupLocation.coordinates.lng)
-        },
-        dropCoords: {
-          lat: Number(dropLocation.coordinates.lat),
-          lng: Number(dropLocation.coordinates.lng)
-        },
-        rideDate: formattedDate,
-        rideTime: formattedTime,
-        rideDateTime: formattedDateTime,
+        pickupCoords: pickupLocation.coordinates,
+        dropCoords: dropLocation.coordinates,
         isRecurring: isRecurring,
         recurringDays: selectedDays,
       });
@@ -284,8 +258,8 @@ const SearchRideScreen = () => {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
+    <ScrollView 
+      style={styles.container} 
       contentContainerStyle={[
         styles.scrollContainer,
         { paddingBottom: Platform.OS === 'ios' ? 90 : 70 }  
@@ -295,11 +269,11 @@ const SearchRideScreen = () => {
         <Heading style={styles.heading}>Search a Ride</Heading>
         <VStack space={4}>
           {/* Pickup Location */}
-          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', {
-            isPickup: true,
+          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', { 
+            isPickup: true, 
             onSelect: (locationData) => {
               setPickupLocation(locationData);
-              setPickupCoords(null);
+              setPickupCoords(locationData.coordinates);
             }
           })}>
             <CustomInput
@@ -312,11 +286,11 @@ const SearchRideScreen = () => {
           </TouchableOpacity>
 
           {/* Drop Location */}
-          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', {
-            isPickup: false,
+          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', { 
+            isPickup: false, 
             onSelect: (locationData) => {
               setDropLocation(locationData);
-              setDropCoords(null);
+              setDropCoords(locationData.coordinates);
             }
           })}>
             <CustomInput
@@ -328,29 +302,37 @@ const SearchRideScreen = () => {
             />
           </TouchableOpacity>
 
-          {/* Date Selection */}
-          <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-            <CustomInput
-              label="Date"
-              value={format(selectedDate, 'dd MMM yyyy')}
-              placeholder="Select date"
-              icon="calendar-outline"
-              editable={false}
+          {/* Recurring Ride Toggle */}
+          {/* <HStack alignItems="center" space={2} mt={4}>
+            <Text fontSize="md">Recurring Search</Text>
+            <Switch 
+              isChecked={isRecurring}
+              onToggle={() => setIsRecurring(!isRecurring)}
+              offTrackColor="gray.200"
+              onTrackColor="blue.500"
             />
-          </TouchableOpacity>
+          </HStack> */}
 
-          {/* Time Selection */}
-          <TouchableOpacity onPress={() => setShowTimePicker(true)}>
-            <CustomInput
-              label="Time"
-              value={format(parse(selectedTime, 'HH:mm', new Date()), 'hh:mm a')}
-              placeholder="Select time"
-              icon="time-outline"
-              editable={false}
-            />
-          </TouchableOpacity>
-
-          
+          {/* Weekdays Selection */}
+          {isRecurring && (
+            <HStack space={2} mt={2} flexWrap="wrap">
+              {weekdays.map((day, index) => (
+                <Button
+                  key={index}
+                  size="sm"
+                  variant={selectedDays.includes(day) ? "solid" : "outline"}
+                  colorScheme={selectedDays.includes(day) ? "blue" : "gray"}
+                  onPress={() => toggleDay(day)}
+                  borderRadius="full"
+                  px={3}
+                  py={1}
+                  mb={2}
+                >
+                  {day}
+                </Button>
+              ))}
+            </HStack>
+          )}
 
           {/* Search Ride Button */}
           <CustomButton
@@ -360,7 +342,7 @@ const SearchRideScreen = () => {
           />
         </VStack>
       </Box>
-     
+      
       {/* Promotions Section */}
       <Box mt={6}>
         <Text fontWeight="bold" fontSize="lg" color="black" mb={2}>Promotions</Text>
@@ -393,43 +375,15 @@ const SearchRideScreen = () => {
           <Text fontWeight="bold" fontSize="lg" color="black" mb={2}>Recent Searches</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {recentSearches.map((search, index) => (
-              <RecentSearchItem
-                key={index}
-                search={search}
+              <RecentSearchItem 
+                key={index} 
+                search={search} 
                 onPress={() => handleRecentSearchSelect(search)}
               />
             ))}
           </ScrollView>
         </Box>
       )}
-
-      {/* Date Picker Modal */}
-      <Modal isOpen={showDatePicker} onClose={() => setShowDatePicker(false)}>
-        <Modal.Content>
-          <Modal.Header>Select Date</Modal.Header>
-          <Modal.Body>
-            <Calendar
-              onDateChange={(date) => {
-                setSelectedDate(new Date(date));
-                setShowDatePicker(false);
-              }}
-              minDate={format(new Date(), 'yyyy-MM-dd')}
-            />
-          </Modal.Body>
-        </Modal.Content>
-      </Modal>
-
-      {/* Time Picker Modal */}
-      <TimePickerModal
-        isOpen={showTimePicker}
-        onClose={() => setShowTimePicker(false)}
-        onSelect={(time) => {
-          setSelectedTime(time);
-          setShowTimePicker(false);
-        }}
-        initialTime={selectedTime}
-        is24Hour={true}
-      />
     </ScrollView>
   );
 };

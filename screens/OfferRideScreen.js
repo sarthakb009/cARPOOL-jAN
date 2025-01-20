@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, Alert, TouchableOpacity, Platform, Pressable } from 'react-native';
-import {
-  Box,
-  Heading,
-  VStack,
-  Text,
-  HStack,
-  Toast,
-  Icon,
-  Actionsheet,
-  useDisclose,
-  Switch,
-  Button,
-  FlatList,
-  Modal,
-  Select
+import { ScrollView, Alert, TouchableOpacity, Platform } from 'react-native';
+import { 
+  Box, 
+  Heading, 
+  VStack, 
+  Text, 
+  HStack, 
+  Toast, 
+  Icon, 
+  Actionsheet, 
+  useDisclose, 
+  Switch, 
+  Button, 
+  FlatList 
 } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -23,8 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { styles, CustomInput, CustomButton, CarouselItem, RecentSearchItem } from '../components/sharedComponents';
 import TimePickerModal from './TimePickerModal';
-import { format, parse, addMinutes } from 'date-fns';
-import Calendar from 'react-native-calendar-picker';
+import { format, parse } from 'date-fns';
 
 const HERE_API_KEY = 'BLiCQHHuN3GFygSHe27hv4rRBpbto7K35v7HXYtANC8';
 
@@ -62,30 +59,13 @@ const OfferRideScreen = () => {
   const { isOpen, onOpen, onClose } = useDisclose();
   const [selectedTime, setSelectedTime] = useState(format(new Date(), 'HH:mm'));
   const [isTimePickerOpen, setIsTimePickerOpen] = useState(false);
-  const [seats, setSeats] = useState(0);
+  const [seats, setSeats] = useState(1);
   const [routes, setRoutes] = useState([]);
 
   // Recurring Ride States
   const [isRecurring, setIsRecurring] = useState(false);
   const [selectedDays, setSelectedDays] = useState([]);
-  const weekdays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-
-  // Add these with your existing state variables
-  const [rideType, setRideType] = useState('normal'); // 'normal', 'scheduled', 'recurring'
-  const [scheduledDate, setScheduledDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [frequency, setFrequency] = useState('WEEKLY');
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
-  const [datePickerType, setDatePickerType] = useState('start'); // 'start' or 'end'
-
-  // Add these to your existing state variables if not already present
-  const [userDetails, setUserDetails] = useState(null);
-
-  const [tempDate, setTempDate] = useState(null);
-  const [tempStartDate, setTempStartDate] = useState(null);
-  const [tempEndDate, setTempEndDate] = useState(null);
+  const weekdays = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
 
   useEffect(() => {
     const checkProfile = async () => {
@@ -104,7 +84,8 @@ const OfferRideScreen = () => {
           navigation.navigate('AddVehicle');
         } else {
           setVehicles(vehicleResponse.data);
-          setSelectedVehicle(null);
+          const defaultVehicle = vehicleResponse.data.find(vehicle => vehicle.isDefault);
+          setSelectedVehicle(defaultVehicle || vehicleResponse.data[0]);
         }
       } catch (error) {
         console.error('Error checking profile:', error);
@@ -135,27 +116,6 @@ const OfferRideScreen = () => {
       }
     }
   }, [route.params]);
-
-  useEffect(() => {
-    const fetchUserDetails = async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        const response = await axios.get(
-          'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/user/user-details',
-          {
-            headers: { Authorization: `Bearer ${token}` }
-          }
-        );
-        setUserDetails(response.data);
-        console.log('User Details:', response.data);
-      } catch (error) {
-        console.error('Error fetching user details:', error);
-        Alert.alert('Error', 'Failed to fetch user details');
-      }
-    };
-
-    fetchUserDetails();
-  }, []);
 
   const loadRecentSearches = async () => {
     try {
@@ -219,155 +179,56 @@ const OfferRideScreen = () => {
   };
 
   const handleOfferRide = async () => {
-    if (!from?.address || !to?.address || !selectedTime) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!from.address || !to.address || !selectedTime || !selectedVehicle) {
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
-    if (!selectedVehicle) {
-      Alert.alert('Error', 'Please select a vehicle');
-      return;
-    }
-
-    if (seats === 0) {
-      Alert.alert('Error', 'Please select number of seats');
-      return;
-    }
-
-    if (seats > selectedVehicle.vehicleCapacity) {
-      Alert.alert('Error', 'Selected seats cannot exceed vehicle capacity');
-      return;
-    }
-
-    if (!userDetails?.driverId || !selectedVehicle?.id) {
-      Alert.alert('Error', 'Driver or vehicle information is missing');
+    if (isRecurring && selectedDays.length === 0) {
+      Alert.alert('Error', 'Please select at least one weekday for recurring rides');
       return;
     }
 
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      let endpoint;
-      let rideData;
+      const formattedStartTime = format(parse(selectedTime, 'HH:mm', new Date()), 'HH:mm:ss');
 
-      switch(rideType) {
-        case 'normal':
-          // Calculate end time (30 minutes after start time)
-          const startDateTime = parse(selectedTime, 'HH:mm', new Date());
-          const endDateTime = addMinutes(startDateTime, 30);
-          const rideDate = format(new Date(), 'yyyy-MM-dd');
-          
-          // Format times
-          const formattedStartTime = format(startDateTime, 'HH:mm:ss');
-          const formattedEndTime = format(endDateTime, 'HH:mm:ss');
-          
-          // Full datetime strings for start and end
-          const fullStartDateTime = `${rideDate}T${formattedStartTime}`;
-          const fullEndDateTime = `${rideDate}T${formattedEndTime}`;
+      const rideData = {
+        source: from.address,
+        sourceLatitude: from.coordinates.lat,
+        sourceLongitude: from.coordinates.lng,
+        destination: to.address,
+        destinationLatitude: to.coordinates.lat,
+        destinationLongitude: to.coordinates.lng,
+        rideDate: new Date().toISOString().split('T')[0],
+        rideScheduledStartTime: formattedStartTime,
+        rideScheduledEndTime: calculateEndTime(formattedStartTime),
+        driverDetails: {
+          id: driverId,
+        },
+        vehicleDto: {
+          id: selectedVehicle.id,
+        },
+        isRecurring: isRecurring,
+        recurringDays: selectedDays,
+        seats: seats,
+      };
 
-          endpoint = 'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/add';
-          rideData = {
-            source: from.address,
-            sourceLatitude: Number(from.coordinates.lat),
-            sourceLongitude: Number(from.coordinates.lng),
-            destination: to.address,
-            destinationLatitude: Number(to.coordinates.lat),
-            destinationLongitude: Number(to.coordinates.lng),
-            rideDate: rideDate,
-            rideScheduledStartTime: formattedStartTime,
-            rideScheduledEndTime: formattedEndTime,
-            status: "Scheduled",
-            checkinStatus: false,
-            checkoutStatus: false,
-            durationInMinutes: 30,
-            rideStartTime: fullStartDateTime,
-            rideEndTime: fullEndDateTime,
-            price: 100.0, // You might want to calculate this based on distance
-            distance: 10.0, // You might want to calculate this using coordinates
-            driverDetails: {
-              id: userDetails?.driverId
-            },
-            vehicleDto: {
-              id: selectedVehicle.id
-            }
-          };
-          break;
-
-        case 'scheduled':
-          if (!scheduledDate || !selectedTime) {
-            Alert.alert('Error', 'Please select both date and time for scheduled ride');
-            return;
-          }
-          endpoint = 'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/scheduled-rides';
-          rideData = {
-            passengerId: userDetails?.customerId,
-            driverId: null,
-            date: format(scheduledDate, 'yyyy-MM-dd'),
-            source: from.address,
-            destination: to.address,
-            scheduledTime: format(parse(selectedTime, 'HH:mm', new Date()), 'HH:mm'),
-            status: "Scheduled"
-          };
-
-          console.log('Scheduled Ride Payload:', JSON.stringify(rideData, null, 2));
-          break;
-
-        case 'recurring':
-          if (!selectedDays.length) {
-            Alert.alert('Error', 'Please select at least one recurring day');
-            return;
-          }
-
-          if (!startDate || !endDate || !selectedTime) {
-            Alert.alert('Error', 'Please select start date, end date, and time');
-            return;
-          }
-
-          endpoint = 'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/RecurringRides/add';
-          
-          // Format the time to match required format (HH:mm:ss)
-          const formattedTime = selectedTime.length === 5 
-            ? `${selectedTime}:00` 
-            : selectedTime;
-
-          rideData = {
-            rideId: null,
-            driverId: userDetails?.driverId,
-            frequency: frequency,
-            recurringDays: selectedDays,
-            startDate: format(startDate, 'yyyy-MM-dd'),
-            endDate: format(endDate, 'yyyy-MM-dd'),
-            timeOfDay: formattedTime,
-            source: from.address,
-            destination: to.address,
-            status: "ACTIVE"
-          };
-
-          console.log('Recurring Ride Payload:', JSON.stringify(rideData, null, 2));
-          break;
-      }
-
-      console.log('Making API call to:', endpoint);
-      console.log('With data:', JSON.stringify(rideData, null, 2));
-
-      const response = await axios.post(endpoint, rideData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await axios.post('http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/add', rideData, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (response.status === 200 || response.status === 201) {
-        Alert.alert('Success', 'Ride offered successfully!');
+      await saveRecentSearches();
+
+      if (response.status === 200) {
         navigation.navigate('RideHistory', { initialTab: 1 });
+      } else {
+        Alert.alert('Error', 'Failed to offer ride. Please try again.');
       }
     } catch (error) {
       console.error('Error offering ride:', error);
-      console.error('Error details:', error.response?.data);
-      Alert.alert(
-        'Error', 
-        error.response?.data?.message || 'Failed to offer ride. Please try again.'
-      );
+      Alert.alert('Error', 'Failed to offer ride. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -382,26 +243,7 @@ const OfferRideScreen = () => {
 
   const handleVehicleSelect = (vehicle) => {
     setSelectedVehicle(vehicle);
-    // Only adjust seats if they're 0 or exceed vehicle capacity
-    const currentSeats = seats || 0;
-    if (currentSeats === 0) {
-      setSeats(vehicle.vehicleCapacity);
-    } else if (currentSeats > vehicle.vehicleCapacity) {
-      setSeats(vehicle.vehicleCapacity);
-    }
     onClose();
-  };
-
-  const incrementSeats = () => {
-    if (selectedVehicle) {
-      setSeats(prev => Math.min(selectedVehicle.vehicleCapacity, (prev || 0) + 1));
-    } else {
-      setSeats(prev => (prev || 0) + 1);
-    }
-  };
-
-  const decrementSeats = () => {
-    setSeats(prev => Math.max(0, (prev || 0) - 1));
   };
 
   const fetchRoutes = async () => {
@@ -473,33 +315,16 @@ const OfferRideScreen = () => {
 
   // Function to toggle selected weekdays
   const toggleDay = (day) => {
-    setSelectedDays(prev => {
-      if (prev.includes(day)) {
-        return prev.filter(d => d !== day);
-      } else {
-        return [...prev, day];
-      }
-    });
-  };
-
-  const handleDateSelect = (day) => {
-    const selectedDate = new Date(day.timestamp);
-    if (datePickerType === 'start') {
-      setStartDate(selectedDate);
+    if (selectedDays.includes(day)) {
+      setSelectedDays(selectedDays.filter(selectedDay => selectedDay !== day));
     } else {
-      setEndDate(selectedDate);
+      setSelectedDays([...selectedDays, day]);
     }
-    setShowDatePicker(false);
-  };
-
-  const handleTimeSelect = (time) => {
-    setSelectedTime(time);
-    setIsTimePickerOpen(false);
   };
 
   return (
-    <ScrollView
-      style={styles.container}
+    <ScrollView 
+      style={styles.container} 
       contentContainerStyle={[
         styles.scrollContent,
         { paddingBottom: Platform.OS === 'ios' ? 90 : 70 }  
@@ -509,8 +334,8 @@ const OfferRideScreen = () => {
         <Heading style={styles.heading}>Offer a Ride</Heading>
         <VStack space={4}>
           {/* From Location */}
-          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', {
-            isPickup: true,
+          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', { 
+            isPickup: true, 
             onSelect: (locationData) => {
               setFrom(locationData);
               setFromCoords(locationData.coordinates);
@@ -526,8 +351,8 @@ const OfferRideScreen = () => {
           </TouchableOpacity>
 
           {/* To Location */}
-          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', {
-            isPickup: false,
+          <TouchableOpacity onPress={() => navigation.navigate('SelectLocation', { 
+            isPickup: false, 
             onSelect: (locationData) => {
               setTo(locationData);
               setToCoords(locationData.coordinates);
@@ -561,16 +386,16 @@ const OfferRideScreen = () => {
             <Box flex={1}>
               <CustomInput
                 label="Seats"
-                value={String(seats || 0)}
+                value={seats.toString()}
                 placeholder="Select seats"
                 icon="people-outline"
                 editable={false}
                 InputRightElement={
                   <HStack space={2} mr={2}>
-                    <TouchableOpacity onPress={decrementSeats}>
+                    <TouchableOpacity onPress={() => setSeats(prev => Math.max(1, prev - 1))}>
                       <Icon as={Ionicons} name="remove-circle-outline" size="sm" color="coolGray.400" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={incrementSeats}>
+                    <TouchableOpacity onPress={() => setSeats(prev => Math.min(4, prev + 1))}>
                       <Icon as={Ionicons} name="add-circle-outline" size="sm" color="coolGray.400" />
                     </TouchableOpacity>
                   </HStack>
@@ -590,195 +415,37 @@ const OfferRideScreen = () => {
             />
           </TouchableOpacity>
 
-          {/* Ride Type Selection */}
-          <Box mb={6}>
-            <Text fontSize="lg" fontWeight="bold" mb={3} color="gray.700">
-              Ride Type
-            </Text>
-            <HStack space={3} mb={4}>
-              {[
-                { id: 'normal', label: 'One-time', icon: 'car-outline' },
-                { id: 'scheduled', label: 'Scheduled', icon: 'calendar-outline' },
-                { id: 'recurring', label: 'Recurring', icon: 'repeat-outline' }
-              ].map((type) => (
-                <Pressable
-                  key={type.id}
-                  flex={1}
-                  onPress={() => setRideType(type.id)}
-                  style={({ pressed }) => ({
-                    opacity: pressed ? 0.8 : 1
-                  })}
+          {/* Recurring Ride Toggle */}
+          {/* <HStack alignItems="center" space={2} mt={4}>
+            <Text fontSize="md">Recurring Ride</Text>
+            <Switch 
+              isChecked={isRecurring}
+              onToggle={() => setIsRecurring(!isRecurring)}
+              offTrackColor="gray.200"
+              onTrackColor="blue.500"
+            />
+          </HStack> */}
+
+          {/* Weekdays Selection */}
+          {isRecurring && (
+            <HStack space={2} mt={2} flexWrap="wrap">
+              {weekdays.map((day, index) => (
+                <Button
+                  key={index}
+                  size="sm"
+                  variant={selectedDays.includes(day) ? "solid" : "outline"}
+                  colorScheme={selectedDays.includes(day) ? "blue" : "gray"}
+                  onPress={() => toggleDay(day)}
+                  borderRadius="full"
+                  px={3}
+                  py={1}
+                  mb={2}
                 >
-                  <Box
-                    bg={rideType === type.id ? 'black' : 'white'}
-                    borderWidth={1}
-                    borderColor="gray.200"
-                    borderRadius={10}
-                    py={3}
-                    shadow={rideType === type.id ? 3 : 1}
-                    alignItems="center"
-                  >
-                    <VStack alignItems="center" space={2}>
-                      <Icon
-                        as={Ionicons}
-                        name={type.icon}
-                        size="sm"
-                        color={rideType === type.id ? "white" : "gray.500"}
-                      />
-                      <Text
-                        fontSize="sm"
-                        color={rideType === type.id ? "white" : "gray.700"}
-                        fontWeight="medium"
-                      >
-                        {type.label}
-                      </Text>
-                    </VStack>
-                  </Box>
-                </Pressable>
+                  {day}
+                </Button>
               ))}
             </HStack>
-
-            {/* Scheduled Ride Options */}
-            {rideType === 'scheduled' && (
-              <Box  p={4} rounded="lg" shadow="sm" borderWidth={1} borderColor="gray.100">
-                <VStack space={4}>
-                  <HStack space={3}>
-                    <Box flex={1}>
-                      <TouchableOpacity onPress={() => setShowDatePicker(true)}>
-                        <CustomInput
-                          label="Date"
-                          value={format(scheduledDate, 'EEE, dd MMM yyyy')}
-                          placeholder="Select date"
-                          icon="calendar-outline"
-                          editable={false}
-                        />
-                      </TouchableOpacity>
-                    </Box>
-                    <Box flex={1}>
-                      <TouchableOpacity onPress={() => setIsTimePickerOpen(true)}>
-                        <CustomInput
-                          label="Time"
-                          value={format(parse(selectedTime, 'HH:mm', new Date()), 'hh:mm a')}
-                          placeholder="Select time"
-                          icon="time-outline"
-                          editable={false}
-                        />
-                      </TouchableOpacity>
-                    </Box>
-                  </HStack>
-                </VStack>
-              </Box>
-            )}
-
-            {/* Recurring Ride Options */}
-            {rideType === 'recurring' && (
-              <Box p={4} rounded="lg" shadow="sm" borderWidth={1} borderColor="gray.100">
-                <VStack space={4}>
-                  {/* Date Range */}
-                  <HStack space={3}>
-                    <Box flex={1}>
-                      <TouchableOpacity onPress={() => {
-                        setDatePickerType('start');
-                        setShowDatePicker(true);
-                      }}>
-                        <CustomInput
-                          label="Start Date"
-                          value={format(startDate, 'dd MMM yyyy')}
-                          placeholder="Start"
-                          icon="calendar-outline"
-                          editable={false}
-                        />
-                      </TouchableOpacity>
-                    </Box>
-                    <Box flex={1}>
-                      <TouchableOpacity onPress={() => {
-                        setDatePickerType('end');
-                        setShowDatePicker(true);
-                      }}>
-                        <CustomInput
-                          label="End Date"
-                          value={format(endDate, 'dd MMM yyyy')}
-                          placeholder="End"
-                          icon="calendar-outline"
-                          editable={false}
-                        />
-                      </TouchableOpacity>
-                    </Box>
-                  </HStack>
-
-                  {/* Time Selection */}
-                  <TouchableOpacity onPress={() => setIsTimePickerOpen(true)}>
-                    <CustomInput
-                      label="Daily Time"
-                      value={format(parse(selectedTime, 'HH:mm', new Date()), 'hh:mm a')}
-                      placeholder="Select time"
-                      icon="time-outline"
-                      editable={false}
-                    />
-                  </TouchableOpacity>
-
-                  {/* Days Selection */}
-                  <Box>
-                    <Text fontSize="sm" fontWeight="medium" color="gray.600" mb={2}>
-                      Repeat on
-                    </Text>
-                    <HStack flexWrap="wrap" space={2}>
-                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day, index) => (
-                        <Pressable
-                          key={day}
-                          onPress={() => toggleDay(weekdays[index])}
-                          bg={selectedDays.includes(weekdays[index]) ? "black" : "white"}
-                        
-                          borderWidth={1}
-                          borderColor="black"
-                          borderRadius={11}
-                          w="40px"
-                          h="40px"
-                          alignItems="center"
-                          justifyContent="center"
-                          mb={2}
-                        >
-                          <Text 
-                            color={selectedDays.includes(weekdays[index]) ? "white" : "black"}
-                            variant={selectedDays.includes(weekdays[index]) ? "solid" : "outline"}
-                            bg={selectedDays.includes(weekdays[index]) ? "black" : "white"}
-                            borderRadius={10}
-                            px={3}
-                            py={1}
-
-                            fontSize="sm"
-                            fontWeight="medium"
-                          >
-                            {day}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </HStack>
-                  </Box>
-
-                  {/* Frequency - Optional, if needed */}
-                  <Box>
-                    <Text fontSize="sm" fontWeight="medium" color="gray.600" mb={1}>
-                      Repeat
-                    </Text>
-                    <Select
-                      selectedValue={frequency}
-                      onValueChange={value => setFrequency(value)}
-                      bg="gray.50"
-                      borderColor="gray.200"
-                      _selectedItem={{
-                        bg: "gray.100",
-                        endIcon: <Icon as={Ionicons} name="checkmark" size="sm" color="black" />
-                      }}
-                      rounded="full"
-                    >
-                      <Select.Item label="Weekly" value="WEEKLY" />
-                    </Select>
-                  </Box>
-                </VStack>
-              </Box>
-            )}
-          </Box>
+          )}
 
           {/* Offer Ride Button */}
           <CustomButton
@@ -858,96 +525,13 @@ const OfferRideScreen = () => {
       <TimePickerModal
         isOpen={isTimePickerOpen}
         onClose={() => setIsTimePickerOpen(false)}
-        onSelect={handleTimeSelect}
+        onSelect={(time) => {
+          setSelectedTime(time);
+          setIsTimePickerOpen(false);
+        }}
         initialTime={selectedTime}
         is24Hour={true}
       />
-
-      {/* Date Picker Modal */}
-      <Modal isOpen={showDatePicker} onClose={() => setShowDatePicker(false)}>
-        <Modal.Content maxWidth="400px">
-          <Modal.CloseButton />
-          <Modal.Header>
-            <Text fontSize="lg" fontWeight="bold">
-              {rideType === 'scheduled' ? 'Select Date' : 
-               `Select ${datePickerType === 'start' ? 'Start' : 'End'} Date`}
-            </Text>
-          </Modal.Header>
-          <Modal.Body>
-            <Calendar
-              onDateChange={(date) => {
-                const selectedDate = new Date(date);
-                // Store temporary selection
-                if (rideType === 'scheduled') {
-                  setTempDate(selectedDate);
-                } else {
-                  if (datePickerType === 'start') {
-                    setTempStartDate(selectedDate);
-                  } else {
-                    setTempEndDate(selectedDate);
-                  }
-                }
-              }}
-              markedDates={{
-                [format(
-                  rideType === 'scheduled' ? (tempDate || scheduledDate) :
-                  datePickerType === 'start' ? (tempStartDate || startDate) : (tempEndDate || endDate),
-                  'yyyy-MM-dd'
-                )]: {
-                  selected: true,
-                  selectedColor: 'black'
-                }
-              }}
-              minDate={
-                datePickerType === 'end' && rideType === 'recurring'
-                  ? format(startDate, 'yyyy-MM-dd')
-                  : format(new Date(), 'yyyy-MM-dd')
-              }
-              theme={{
-                selectedDayBackgroundColor: 'black',
-                todayTextColor: 'black',
-                arrowColor: 'black',
-                textDayFontWeight: '500',
-                textMonthFontWeight: 'bold',
-                textDayHeaderFontWeight: '500'
-              }}
-            />
-            <HStack justifyContent="flex-end" mt={4} space={2}>
-              <Button
-                variant="ghost"
-                onPress={() => {
-                  setTempDate(null);
-                  setTempStartDate(null);
-                  setTempEndDate(null);
-                  setShowDatePicker(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                bg="black"
-                onPress={() => {
-                  if (rideType === 'scheduled' && tempDate) {
-                    setScheduledDate(tempDate);
-                  } else {
-                    if (datePickerType === 'start' && tempStartDate) {
-                      setStartDate(tempStartDate);
-                    } else if (datePickerType === 'end' && tempEndDate) {
-                      setEndDate(tempEndDate);
-                    }
-                  }
-                  setTempDate(null);
-                  setTempStartDate(null);
-                  setTempEndDate(null);
-                  setShowDatePicker(false);
-                }}
-              >
-                Confirm
-              </Button>
-            </HStack>
-          </Modal.Body>
-        </Modal.Content>
-      </Modal>
     </ScrollView>
   );
 };

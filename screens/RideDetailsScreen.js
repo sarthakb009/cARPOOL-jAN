@@ -565,10 +565,13 @@ const RideDetailsScreen = () => {
       }
 
       let location = await Location.getCurrentPositionAsync({});
-      setUserLocation({
+      const formattedLocation = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-      });
+      };
+      
+      setUserLocation(formattedLocation);
+      setFormattedPassengerPickup(formattedLocation);
     } catch (error) {
       console.error('Error getting user location:', error);
       setError('Unable to fetch your location');
@@ -767,14 +770,50 @@ const RideDetailsScreen = () => {
           <Animated.View style={{ opacity: fadeAnim }}>
             <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
               <HStack alignItems="center" mb="4">
-                <Icon as={Feather} name="zap" size="6" color="green.500" mr="2" />
+                <Icon as={Feather} name="map-pin" size="6" color="green.500" mr="2" />
                 <Text fontSize="lg" fontWeight="bold" color="black">
-                  Eco-Friendly Ride
+                  Passenger Location Details
                 </Text>
               </HStack>
+
+              {/* Distance and Location Info */}
+              <Box bg="gray.100" p="4" rounded="lg" mb="4">
+                <VStack space="3">
+                  <HStack justifyContent="space-between">
+                    <Text fontSize="sm" color="gray.600">Distance to Passenger</Text>
+                    <Text fontSize="sm" fontWeight="bold">
+                      {routeDetails.distance ? `${(routeDetails.distance / 1000).toFixed(1)} km` : 'Calculating...'}
+                    </Text>
+                  </HStack>
+                  <HStack justifyContent="space-between">
+                    <Text fontSize="sm" color="gray.600">Estimated Duration</Text>
+                    <Text fontSize="sm" fontWeight="bold">
+                      {routeDetails.duration ? `${Math.round(routeDetails.duration / 60)} mins` : 'Calculating...'}
+                    </Text>
+                  </HStack>
+                </VStack>
+              </Box>
+
+              {/* Map showing passenger location */}
+              <Box bg="white" rounded="lg" shadow={2} p="4" mb="4" h={200}>
+                <MapScreen
+                  driverLocation={driverLocation}
+                  passengerPickupLocation={formattedPassengerPickup}
+                  passengerDropLocation={formattedPassengerDrop}
+                  rideState={rideState}
+                  ride={rideDetails}
+                  hideNavigationButton={true}
+                  source={rideDetails?.source}
+                  destination={rideDetails?.destination}
+                  shouldFetchRoute={true}
+                  onLocationSelect={handleLocationSelect}
+                />
+              </Box>
+
               <Text fontSize="md" color="gray.600" mb="4">
                 Join this ride to save 2.5 kg of CO2
               </Text>
+              
               <Button
                 onPress={joinRide}
                 isLoading={joiningRide}
@@ -940,7 +979,7 @@ const RideDetailsScreen = () => {
                   Message
                 </Button>
               </HStack>
-              {/* <Box bg="white" rounded="lg" shadow={2} p="4" mb="4" h={300}>
+              <Box bg="white" rounded="lg" shadow={2} p="4" mb="4" h={300}>
                 <MapScreen
                   driverLocation={driverLocation}
                   passengerPickupLocation={formattedPassengerPickup}
@@ -952,8 +991,9 @@ const RideDetailsScreen = () => {
                   source={rideDetails?.source}
                   destination={rideDetails?.destination}
                   shouldFetchRoute={true}
+                  onLocationSelect={handleLocationSelect}
                 />
-              </Box> */}
+              </Box>
             </Box>
           </Animated.View>
         );
@@ -1148,6 +1188,39 @@ const RideDetailsScreen = () => {
       }
     };
   }, [startLocationUpdates]);
+
+  // Add this function near the other utility functions
+  const calculateRouteDetails = async (driverLoc, passengerLoc) => {
+    if (!driverLoc || !passengerLoc) return;
+    
+    try {
+      const response = await axios.get(
+        `https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.latitude},${driverLoc.longitude}&destination=${passengerLoc.latitude},${passengerLoc.longitude}&return=summary&apiKey=${HERE_API_KEY}`
+      );
+      
+      if (response.data.routes && response.data.routes[0]) {
+        const summary = response.data.routes[0].sections[0].summary;
+        setRouteDetails({
+          distance: summary.length, // in meters
+          duration: summary.duration // in seconds
+        });
+      }
+    } catch (error) {
+      console.error('Error calculating route details:', error);
+    }
+  };
+
+  // Add this useEffect to trigger route calculation
+  useEffect(() => {
+    if (driverLocation && userLocation && rideState === RideStates.NOT_JOINED) {
+      calculateRouteDetails(driverLocation, userLocation);
+    }
+  }, [driverLocation, userLocation, rideState]);
+
+  // Call getUserLocation when component mounts
+  useEffect(() => {
+    getUserLocation();
+  }, []);
 
   // Render loading indicator
   if (loading) {

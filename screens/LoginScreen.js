@@ -15,38 +15,18 @@ const LoginScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(100)).current;
 
-  // Load saved username, password and save password preference
+  // Load saved username and password
   useEffect(() => {
     const loadCredentials = async () => {
-      try {
-        const savedUsername = await AsyncStorage.getItem('username');
-        const savedPassword = await AsyncStorage.getItem('password');
-        const savedPreference = await AsyncStorage.getItem('savePassword');
-        
-        if (savedUsername) setUsername(savedUsername);
-        if (savedPassword) setPassword(savedPassword);
-        setSavePassword(savedPreference === 'true');
-      } catch (error) {
-        console.error('Error loading credentials:', error);
-      }
+      const savedUsername = await AsyncStorage.getItem('savedUsername');
+      const savedPassword = await AsyncStorage.getItem('password');
+      const savedPreference = await AsyncStorage.getItem('savePassword');
+      if (savedUsername) setUsername(savedUsername);
+      if (savedPassword) setPassword(savedPassword);
+      if (savedPreference === 'true') setSavePassword(true);
     };
     loadCredentials();
   }, []);
-
-  // Handle save password preference change
-  const handleSavePasswordChange = async (value) => {
-    setSavePassword(value);
-    try {
-      await AsyncStorage.setItem('savePassword', value.toString());
-      
-      // If save password is turned off, remove saved password
-      if (!value) {
-        await AsyncStorage.removeItem('password');
-      }
-    } catch (error) {
-      console.error('Error saving preference:', error);
-    }
-  };
 
   const handleLogin = async () => {
     setLoading(true);
@@ -57,18 +37,23 @@ const LoginScreen = ({ navigation }) => {
         password,
       });
 
-      // Save credentials if checkbox is checked
-      if (savePassword) {
-        await AsyncStorage.setItem('username', username);
-        await AsyncStorage.setItem('password', password);
-      } else {
-        await AsyncStorage.removeItem('password');
-      }
-
+      // Store username and token regardless of save password preference
       const [userId, token] = response.data.split(' ');
       await AsyncStorage.setItem('userToken', token);
       await AsyncStorage.setItem('userId', userId);
-      await AsyncStorage.setItem('username', username);
+
+      // Handle saved credentials based on checkbox
+      if (savePassword) {
+        await AsyncStorage.setItem('username', username);
+        await AsyncStorage.setItem('password', password);
+        await AsyncStorage.setItem('savePassword', 'true');
+        await AsyncStorage.setItem('savedUsername', username);
+      } else {
+        // Only remove saved credentials, not the current session username
+        await AsyncStorage.removeItem('password');
+        await AsyncStorage.removeItem('savePassword');
+        await AsyncStorage.removeItem('savedUsername');
+      }
 
       const userResponse = await axios.get(`http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/user/manage/get?username=${username}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -178,7 +163,7 @@ const LoginScreen = ({ navigation }) => {
           <FormControl>
             <Checkbox
               isChecked={savePassword}
-              onChange={handleSavePasswordChange}
+              onChange={setSavePassword}
               accessibilityLabel="Save Password"
             >
               Save Password
