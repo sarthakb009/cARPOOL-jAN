@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import MainTabNavigator from './MainTabNavigator';
 import LoginScreen from '../screens/LoginScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import RideDetailsScreen from '../screens/RideDetailsScreen';
 import ActiveRideRequestScreen from '../screens/ActiveRideRequestScreen';
@@ -105,6 +106,11 @@ const AppNavigator = () => {
           options={{ headerShown: false }}
         />
         <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
           name="Register"
           component={RegisterScreen}
           options={{ headerShown: false }}
@@ -195,6 +201,7 @@ const AppNavigator = () => {
           component={DriverProfileScreen}
           options={{ headerShown: false }}
         />
+        
          <Stack.Screen
           name="RecurringRides"
           component={RecurringRidesScreen}
