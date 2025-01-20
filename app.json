@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "CarpoolingApp",
+    "slug": "CarpoolingApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.tribhuwanshubham.CarpoolingApp",
+      "config": {
+        "googleMaps": { "apiKey": "AIzaSyBK2rAhuWLsXyJ-M28srUzYxNmK1nIPWuE" }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b1e55d51-3c02-4857-b06f-3cd908bedf7f"
+      }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b1e55d51-3c02-4857-b06f-3cd908bedf7f"
+    }
+  }
+}
