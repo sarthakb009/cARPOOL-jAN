@@ -10,7 +10,7 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
   const getCurrentTime = () => {
     const now = new Date();
     return {
-      hour: now.getHours() % 12 || 12,
+      hour: now.getHours(),
       minute: now.getMinutes(),
       period: now.getHours() >= 12 ? 'PM' : 'AM'
     };
@@ -23,28 +23,31 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
         const parsedHours = parseInt(hours);
         const parsedMinutes = parseInt(minutes);
         if (isNaN(parsedHours) || isNaN(parsedMinutes)) {
-          throw new Error('Invalid time format');
+          return getCurrentTime();
         }
         return {
-          hour: parsedHours % 12 || 12,
+          hour: is24Hour ? parsedHours : (parsedHours % 12 || 12),
           minute: parsedMinutes,
           period: parsedHours >= 12 ? 'PM' : 'AM'
         };
       } catch (error) {
         console.error('Error parsing initial time:', error);
+        return getCurrentTime();
       }
     }
     return getCurrentTime();
   };
 
   const initialTimeValues = parseInitialTime();
-
   const [selectedHour, setSelectedHour] = useState(initialTimeValues.hour);
   const [selectedMinute, setSelectedMinute] = useState(initialTimeValues.minute);
   const [selectedPeriod, setSelectedPeriod] = useState(initialTimeValues.period);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(height)).current;
+  const hourScrollViewRef = useRef(null);
+  const minuteScrollViewRef = useRef(null);
+  const periodScrollViewRef = useRef(null);
 
   const hours = Array.from({ length: 12 }, (_, i) => i + 1);
   const minutes = Array.from({ length: 60 }, (_, i) => i);
@@ -52,6 +55,22 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
 
   useEffect(() => {
     if (isOpen) {
+      const currentValues = parseInitialTime();
+      setSelectedHour(currentValues.hour);
+      setSelectedMinute(currentValues.minute);
+      setSelectedPeriod(currentValues.period);
+
+      // Scroll to current positions after a short delay to ensure the modal is fully opened
+      setTimeout(() => {
+        const hourIndex = hours.indexOf(currentValues.hour % 12 || 12);
+        const minuteIndex = minutes.indexOf(currentValues.minute);
+        const periodIndex = periods.indexOf(currentValues.period);
+
+        hourScrollViewRef.current?.scrollTo({ y: hourIndex * 50, animated: false });
+        minuteScrollViewRef.current?.scrollTo({ y: minuteIndex * 50, animated: false });
+        periodScrollViewRef.current?.scrollTo({ y: periodIndex * 50, animated: false });
+      }, 100);
+
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -79,7 +98,7 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
         }),
       ]).start();
     }
-  }, [isOpen]);
+  }, [isOpen, initialTime]);
 
   const handleScroll = (event, setSelected, items) => {
     const yOffset = event.nativeEvent.contentOffset.y;
@@ -89,19 +108,22 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
 
   const handleConfirm = () => {
     let hour = selectedHour;
-    if (selectedPeriod === 'PM' && hour !== 12) {
-      hour += 12;
-    } else if (selectedPeriod === 'AM' && hour === 12) {
-      hour = 0;
+    if (!is24Hour) {
+      if (selectedPeriod === 'PM' && hour !== 12) {
+        hour += 12;
+      } else if (selectedPeriod === 'AM' && hour === 12) {
+        hour = 0;
+      }
     }
     const formattedTime = `${hour.toString().padStart(2, '0')}:${selectedMinute.toString().padStart(2, '0')}`;
     onSelect(formattedTime);
     onClose();
   };
 
-  const renderScrollViewContent = (items, selectedItem, setSelectedItem) => {
+  const renderScrollViewContent = (items, selectedItem, setSelectedItem, scrollViewRef, type) => {
     return (
       <Animated.ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         snapToInterval={50}
         decelerationRate="fast"
@@ -114,7 +136,10 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
           <TouchableOpacity 
             key={index} 
             style={styles.itemContainer}
-            onPress={() => setSelectedItem(item)}
+            onPress={() => {
+              setSelectedItem(item);
+              scrollViewRef.current?.scrollTo({ y: index * 50, animated: true });
+            }}
           >
             <Text
               style={[
@@ -139,7 +164,14 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
         <HStack justifyContent="space-between" alignItems="center" mb={4}>
           <Text style={styles.title}>Set Time</Text>
           <Text style={styles.selectedTime}>
-            {format(new Date(2023, 0, 1, selectedHour, selectedMinute), is24Hour ? 'HH:mm' : 'hh:mm a')}
+            {format(new Date().setHours(
+              !is24Hour && selectedPeriod === 'PM' && selectedHour !== 12 
+                ? selectedHour + 12 
+                : (!is24Hour && selectedPeriod === 'AM' && selectedHour === 12)
+                ? 0
+                : selectedHour,
+              selectedMinute
+            ), is24Hour ? 'HH:mm' : 'hh:mm a')}
           </Text>
           <TouchableOpacity onPress={onClose}>
             <Icon as={MaterialIcons} name="close" size={6} color="black" />
@@ -148,9 +180,9 @@ const TimePickerModal = ({ isOpen, onClose, onSelect, initialTime, is24Hour = fa
 
         <Box style={styles.pickerContainer}>
           <HStack justifyContent="space-between" height={200}>
-            {renderScrollViewContent(hours, selectedHour, setSelectedHour)}
-            {renderScrollViewContent(minutes, selectedMinute, setSelectedMinute)}
-            {renderScrollViewContent(periods, selectedPeriod, setSelectedPeriod)}
+            {renderScrollViewContent(hours, selectedHour, setSelectedHour, hourScrollViewRef, 'hour')}
+            {renderScrollViewContent(minutes, selectedMinute, setSelectedMinute, minuteScrollViewRef, 'minute')}
+            {renderScrollViewContent(periods, selectedPeriod, setSelectedPeriod, periodScrollViewRef, 'period')}
           </HStack>
           <Box style={styles.selectionIndicator} />
         </Box>

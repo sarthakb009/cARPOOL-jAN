@@ -11,22 +11,43 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showError, setShowError] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [savePassword, setSavePassword] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(100)).current;
 
-  // Load saved username and password
+  // Load saved username, password and save password preference
   useEffect(() => {
     const loadCredentials = async () => {
-      const savedUsername = await AsyncStorage.getItem('savedUsername');
-      const savedPassword = await AsyncStorage.getItem('password');
-      const savedPreference = await AsyncStorage.getItem('savePassword');
-      if (savedUsername) setUsername(savedUsername);
-      if (savedPassword) setPassword(savedPassword);
-      if (savedPreference === 'true') setSavePassword(true);
+      try {
+        const savedUsername = await AsyncStorage.getItem('username');
+        const savedPassword = await AsyncStorage.getItem('password');
+        const savedPreference = await AsyncStorage.getItem('savePassword');
+        
+        if (savedUsername) setUsername(savedUsername);
+        if (savedPassword) setPassword(savedPassword);
+        setSavePassword(savedPreference === 'true');
+      } catch (error) {
+        console.error('Error loading credentials:', error);
+      }
     };
     loadCredentials();
   }, []);
+
+  // Handle save password preference change
+  const handleSavePasswordChange = async (value) => {
+    setSavePassword(value);
+    try {
+      await AsyncStorage.setItem('savePassword', value.toString());
+      
+      // If save password is turned off, remove saved password
+      if (!value) {
+        await AsyncStorage.removeItem('password');
+      }
+    } catch (error) {
+      console.error('Error saving preference:', error);
+    }
+  };
 
   const handleLogin = async () => {
     setLoading(true);
@@ -37,23 +58,18 @@ const LoginScreen = ({ navigation }) => {
         password,
       });
 
-      // Store username and token regardless of save password preference
-      const [userId, token] = response.data.split(' ');
-      await AsyncStorage.setItem('userToken', token);
-      await AsyncStorage.setItem('userId', userId);
-
-      // Handle saved credentials based on checkbox
+      // Save credentials if checkbox is checked
       if (savePassword) {
         await AsyncStorage.setItem('username', username);
         await AsyncStorage.setItem('password', password);
-        await AsyncStorage.setItem('savePassword', 'true');
-        await AsyncStorage.setItem('savedUsername', username);
       } else {
-        // Only remove saved credentials, not the current session username
         await AsyncStorage.removeItem('password');
-        await AsyncStorage.removeItem('savePassword');
-        await AsyncStorage.removeItem('savedUsername');
       }
+
+      const [userId, token] = response.data.split(' ');
+      await AsyncStorage.setItem('userToken', token);
+      await AsyncStorage.setItem('userId', userId);
+      await AsyncStorage.setItem('username', username);
 
       const userResponse = await axios.get(`http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/user/manage/get?username=${username}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -146,7 +162,7 @@ const LoginScreen = ({ navigation }) => {
           </FormControl>
           <FormControl>
             <Input
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChangeText={setPassword}
               placeholder="Password"
@@ -157,13 +173,22 @@ const LoginScreen = ({ navigation }) => {
               py="3"
               _hover={{ bg: "coolGray.100" }}
               _focus={{ bg: "coolGray.100" }}
-              secureTextEntry
+              InputRightElement={
+                <Pressable onPress={() => setShowPassword(!showPassword)} mr="3">
+                  <Icon
+                    as={Ionicons}
+                    name={showPassword ? "eye-outline" : "eye-off-outline"}
+                    size="sm"
+                    color="coolGray.500"
+                  />
+                </Pressable>
+              }
             />
           </FormControl>
           <FormControl>
             <Checkbox
               isChecked={savePassword}
-              onChange={setSavePassword}
+              onChange={handleSavePasswordChange}
               accessibilityLabel="Save Password"
             >
               Save Password
@@ -191,6 +216,14 @@ const LoginScreen = ({ navigation }) => {
           >
             Sign In
           </ChakraButton>
+          <Text
+            mt="4"
+            textAlign="center"
+            color="coolGray.600"
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            Forgot Password?
+          </Text>
           <Text
             mt="4"
             textAlign="center"

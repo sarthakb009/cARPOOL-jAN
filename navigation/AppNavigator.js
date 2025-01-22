@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import MainTabNavigator from './MainTabNavigator';
 import LoginScreen from '../screens/LoginScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import RideDetailsScreen from '../screens/RideDetailsScreen';
 import ActiveRideRequestScreen from '../screens/ActiveRideRequestScreen';
@@ -35,7 +36,6 @@ import RecurringRidesScreen from '../screens/RecurringRideScreen';
 import ScheduleRideScreen from '../screens/ScheduleRideScreen';
 import RecurringRidesListScreen from '../screens/RecurringRidesListScreen';
 import ScheduledRidesListScreen from '../screens/ScheduledRidesListScreen';
-import RateRideScreen from '../screens/RateRideScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -81,9 +81,9 @@ const TabNavigator = () => {
   return (
     <Tab.Navigator>
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen 
-        name="Profile" 
-        component={ProfileStack} 
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
         options={{ headerShown: false }}
       />
       {/* Other tab screens */}
@@ -103,6 +103,11 @@ const AppNavigator = () => {
         <Stack.Screen
           name="Login"
           component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen
@@ -196,6 +201,7 @@ const AppNavigator = () => {
           component={DriverProfileScreen}
           options={{ headerShown: false }}
         />
+        
          <Stack.Screen
           name="RecurringRides"
           component={RecurringRidesScreen}
@@ -240,14 +246,6 @@ const AppNavigator = () => {
           name="AddLocation"
           component={AddLocationScreen}
           options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="RateRide" 
-          component={RateRideScreen}
-          options={{
-            headerShown: false,
-            presentation: 'modal'
-          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -7,10 +7,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 const { width } = Dimensions.get('window');
-
-
 const RideCard = ({ ride, onPress, requestStatus }) => {
-  console.log('requestStatus', requestStatus)
   console.log('card', onPress, ride)
   const theme = useTheme();
   const getStatusColor = (status) => {
@@ -109,7 +106,6 @@ const RideCard = ({ ride, onPress, requestStatus }) => {
   );
 };
 const RideListScreen = () => {
-  console.log('requestStatus RideListScreen')
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -117,46 +113,66 @@ const RideListScreen = () => {
   const [rideRequests, setRideRequests] = useState({});
   const navigation = useNavigation();
   const route = useRoute();
-  const { pickupLocation, dropLocation, pickupCoords } = route.params;
+  const { pickupLocation, dropLocation, pickupCoords, dropCoords, rideDate, rideTime, rideDateTime } = route.params;
   const theme = useTheme();
   const fetchRides = useCallback(async () => {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
       const passengerId = await AsyncStorage.getItem('passengerId');
-      if (!token) {
-        throw new Error('No authentication token found');
+      
+      if (!token || !passengerId) {
+        throw new Error('Missing authentication details');
       }
+
+      if (!pickupCoords?.lat || !pickupCoords?.lng || !rideDateTime) {
+        throw new Error('Invalid search parameters');
+      }
+
       const url = `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/passenger/searchRideByRadius`;
       const params = {
-        latitude: pickupCoords.lat,
-        longitude: pickupCoords.lng,
+        latitude: Number(pickupCoords.lat),
+        longitude: Number(pickupCoords.lng),
         minRadiusKm: 0.0,
         maxRadiusKm: 5.0,
-        passengerId: passengerId
+        passengerId: Number(passengerId),
+        rideDate: rideDate,
+        rideTime: rideTime
       };
+
+      console.log('Searching rides with params:', params);
+
       const response = await axios({
         method: 'get',
         url: url,
         params: params,
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
         },
         withCredentials: false
       });
       console.log('API Response:', response.data);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
       const filteredAndSortedRides = response.data
         .filter(ride => {
-          const rideDate = new Date(ride.rideDate);
-          rideDate.setHours(0, 0, 0, 0);
-          return ride.status?.toLowerCase() !== 'completed';
+          if (!ride.rideStartTime) return false;
+          
+          const rideDateTime = new Date(ride.rideStartTime);
+          const searchDateTime = new Date(rideDateTime);
+          
+          const timeDiff = Math.abs(rideDateTime - searchDateTime);
+          const minutesDiff = Math.floor(timeDiff / 1000 / 60);
+          
+          return minutesDiff <= 30;
         })
-        .sort((a, b) => new Date(b.rideDate) - new Date(a.rideDate));
-      // Let's log the filtered results
-      console.log('Filtered rides:', filteredAndSortedRides);
+        .sort((a, b) => {
+          const dateA = new Date(a.rideStartTime);
+          const dateB = new Date(b.rideStartTime);
+          return dateA - dateB;
+        });
+      console.log('Raw API Response:', response.data);
+      console.log('Filtered Rides:', filteredAndSortedRides);
       setRides(filteredAndSortedRides);
       const requests = {};
       for (const ride of filteredAndSortedRides) {
@@ -177,12 +193,13 @@ const RideListScreen = () => {
       setError(null);
     } catch (error) {
       console.error('Error fetching rides:', error);
-      setError('Failed to fetch rides. Please try again.');
+      console.error('Error details:', error.response?.data);
+      setError(error.response?.data?.message || 'Failed to fetch rides. Please try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [pickupCoords]);
+  }, [pickupCoords, dropCoords, rideDateTime]);
   useEffect(() => {
     fetchRides();
   }, [fetchRides]);

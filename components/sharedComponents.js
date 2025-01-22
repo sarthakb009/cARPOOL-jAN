@@ -30,8 +30,10 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#f0f0f0',
     borderWidth: 0,
-    paddingRight: 10,
+    textAlignVertical: 'center',
     textAlign: 'left',
+    paddingLeft: 45,
+    paddingRight: 10,
   },
   button: {
     backgroundColor: 'black',
@@ -68,18 +70,27 @@ export const styles = StyleSheet.create({
 export const CustomInput = ({ label, value, onChangeText, placeholder, icon, ...props }) => (
   <Box mb={4}>
     <Text style={styles.inputLabel}>{label}</Text>
-    <Input
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      style={[styles.input, { textAlign: 'left' }]}
-      numberOfLines={1}
-      ellipsizeMode="head"
-      InputLeftElement={
-        <Icon as={Ionicons} name={icon} size={5} ml={2} color="gray.400" />
-      }
-      {...props}
-    />
+    <Box position="relative">
+      <Icon 
+        as={Ionicons} 
+        name={icon} 
+        size={5}
+        color="gray.400"
+        position="absolute"
+        left={3}
+        top="15px"
+        zIndex={1}
+      />
+      <Input
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        style={styles.input}
+        numberOfLines={1}
+        ellipsizeMode="head"
+        {...props}
+      />
+    </Box>
   </Box>
 );
 
@@ -106,32 +117,18 @@ export const CarouselItem = ({ item }) => (
   </Box>
 );
 
-export const RecentSearchItem = ({ search, onPress }) => (
-  <TouchableOpacity onPress={onPress}>
-    <Box
-      bg="white"
-      borderRadius="md"
-      shadow={1}
-      p={4}
-      mr={3}
-      minWidth={250}
-    >
-      <HStack space={3} alignItems="center">
-        <Icon as={Ionicons} name="time-outline" size="sm" color="gray.500" />
+export const RecentSearchItem = ({ search }) => (
+  <Pressable>
+    <Box bg="gray.100" borderRadius="md" p={4} mb={3}>
+      <HStack space={4} alignItems="center">
+        <Icon as={Ionicons} name="time-outline" size={6} color="black" />
         <VStack flex={1}>
-          <Text fontSize="sm" color="gray.500">
-            {search.time}
-          </Text>
-          <Text fontSize="md" numberOfLines={1}>
-            {search.from}
-          </Text>
-          <Text fontSize="md" numberOfLines={1}>
-            {search.to}
-          </Text>
+          <Text fontWeight="bold" fontSize="md" color="black">{search.from} → {search.to}</Text>
+          <Text color="gray.600" fontSize="sm">{search.time}</Text>
         </VStack>
       </HStack>
     </Box>
-  </TouchableOpacity>
+  </Pressable>
 );
 
 export const LocationItem = ({ icon, title, subtitle, onPress }) => (

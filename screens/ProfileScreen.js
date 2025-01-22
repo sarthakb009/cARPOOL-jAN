@@ -1,32 +1,108 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, View, TouchableOpacity } from 'react-native';
-import { Box, HStack, VStack, Text, Icon, Pressable } from 'native-base';
-import { Feather } from '@expo/vector-icons';
+import { ScrollView, StyleSheet, View, TouchableOpacity, Button } from 'react-native';
+import { Box, HStack, VStack, Text, Icon, Pressable, Avatar } from 'native-base';
+import { Feather, MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { MotiView } from 'moti';
+import { Easing } from 'react-native-reanimated'; 
+import { calculateAverageRating } from '../utils/ratingUtils';
+
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const [userData, setUserData] = useState(null);
-  const [isDriver, setIsDriver] = useState(true);
+  const [isDriver, setIsDriver] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
+  const [driverStats, setDriverStats] = useState({
+    tripsCompleted: 0,
+    totalDistance: 0
+  });
+  const [reviews, setReviews] = useState([]);
+  const [driverVerified, setDriverVerified] = useState(false);
 
   useEffect(() => {
     fetchUserData();
   }, []);
+
+  useEffect(() => {
+    fetchDriverStats();
+  }, []);
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const driverId = await AsyncStorage.getItem('driverId');
+        if (driverId) {
+          setIsDriver(true);
+          const token = await AsyncStorage.getItem('userToken');
+          const response = await axios.get(
+            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/review/getByDriver?driverId=${driverId}`,
+            {
+              headers: { Authorization: `Bearer ${token}` }
+            }
+          );
+          setReviews(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching reviews:', error);
+      }
+    };
+
+    fetchReviews();
+  }, []);
+
+  const fetchDriverStats = async () => {
+    try {
+      const driverId = await AsyncStorage.getItem('driverId');
+      const token = await AsyncStorage.getItem('userToken'); // Fetch token from storage
+      if (driverId && token) {
+        console.log('Making API call to /allRidesCountForDriver');
+        const response = await axios.get(
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/allRidesCountForDriver?id=${driverId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` }, // Add the token here
+          }
+        );
+        console.log('API Response:', response.data);
+        setDriverStats((prev) => ({
+          ...prev,
+          tripsCompleted: parseInt(response.data, 10) || 0,
+        }));
+      } else {
+        console.log('Driver ID or token is missing.');
+      }
+    } catch (error) {
+      console.error('Error fetching driver stats:', error);
+    }
+  };
+  
 
   const fetchUserData = async () => {
     try {
       const username = await AsyncStorage.getItem('username');
       const response = await axios.get(`http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/user/manage/get?username=${username}`);
       setUserData(response.data);
+  
+      const driverId = await AsyncStorage.getItem('driverId');
+      if (driverId) {
+        const token = await AsyncStorage.getItem('userToken');
+        const driverResponse = await axios.get(
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/driver/getById?id=${driverId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        console.log('Driver Data:', driverResponse.data); // Debugging
+        setDriverVerified(driverResponse.data.licenseVerified || false);
+      }
     } catch (error) {
       console.error('Error fetching user data:', error);
     }
   };
+  
+  
+  
 
   const handleLogout = async () => {
     try {
@@ -46,6 +122,8 @@ const ProfileScreen = () => {
   const handleNavigation = (screenName) => {
     navigation.navigate(screenName);
   };
+
+  
 
   if (!userData) {
     return (
@@ -73,148 +151,492 @@ const ProfileScreen = () => {
     return age;
   };
 
+  const formatGender = (gender) => {
+    if (!gender) return 'Not Specified';
+    return gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+  };
+
   const quickActions = [
     { icon: 'truck', label: 'Vehicles', route: 'Vehicles' },
     { icon: 'user', label: 'Driver Profile', route: 'DriverProfile' },
     { icon: 'map', label: 'Routes', route: 'Routes' },
     { icon: 'map-pin', label: 'Locations', route: 'Locations' },
-    { icon: 'calendar', label: 'Scheduled Rides', route: 'ScheduledRides' },
-    { icon: 'repeat', label: 'Recurring Rides', route: 'RecurringRides' },
+    // { icon: 'calendar', label: 'Scheduled Rides', route: 'ScheduledRides' },
+    // { icon: 'repeat', label: 'Recurring Rides', route: 'RecurringRides' },
     { icon: 'help-circle', label: 'Help', route: 'Help' },
     { icon: 'gift', label: 'Refer & Earn', route: 'ReferAndEarn' },
-    { icon: 'map', label: 'Scheduled Rides List', route: 'ScheduledRidesList' },
-    { icon: 'repeat', label: 'Recurring Rides List', route: 'RecurringRidesList' },
+    // { icon: 'map', label: 'Scheduled Rides List', route: 'ScheduledRidesList' },
+    // { icon: 'repeat', label: 'Recurring Rides List', route: 'RecurringRidesList' },
   ];
 
+  const renderStatsContent = () => {
+    if (driverStats.tripsCompleted === 0) {
+      return (
+        <Box
+          bg="gray.50"
+          p={6}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+          alignItems="center"
+        >
+          <Icon 
+            as={FontAwesome5} 
+            name="road" 
+            size={8} 
+            color="gray.300" 
+            mb={4} 
+          />
+          <Text 
+            fontSize="lg" 
+            fontWeight="600" 
+            color="gray.500"
+            textAlign="center"
+            mb={2}
+          >
+            Start Your Journey
+          </Text>
+          <Text 
+            fontSize="sm" 
+            color="gray.400"
+            textAlign="center"
+          >
+            Complete your first ride to see your statistics and earn achievements
+          </Text>
+        </Box>
+      );
+    }
 
+    return (
+      <VStack space={4}>
+        <Box
+          bg="gray.50"
+          p={4}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+        >
+          <VStack space={3}>
+            <HStack justifyContent="space-between" alignItems="center">
+              <HStack space={3} alignItems="center">
+                <Box
+                  bg="white"
+                  p={2}
+                  borderRadius="lg"
+                  shadow={1}
+                >
+                  <Icon as={FontAwesome5} name="route" size={4} color="gray.700" />
+                </Box>
+                <Text fontSize="sm" color="gray.600">Trips Completed</Text>
+              </HStack>
+              <Text fontSize="lg" fontWeight="700" color="gray.800">
+                {driverStats.tripsCompleted || '0'}
+              </Text>
+            </HStack>
 
+            <HStack justifyContent="space-between" alignItems="center">
+              <HStack space={3} alignItems="center">
+                <Box
+                  bg="white"
+                  p={2}
+                  borderRadius="lg"
+                  shadow={1}
+                >
+                  <Icon as={FontAwesome5} name="road" size={4} color="gray.700" />
+                </Box>
+                <Text fontSize="sm" color="gray.600">Total Distance</Text>
+              </HStack>
+              <Text fontSize="lg" fontWeight="700" color="gray.800">
+                {driverStats.totalDistance || '0'} km
+              </Text>
+            </HStack>
 
+            <HStack justifyContent="space-between" alignItems="center">
+              <HStack space={3} alignItems="center">
+                <Box
+                  bg="white"
+                  p={2}
+                  borderRadius="lg"
+                  shadow={1}
+                >
+                  <Icon as={FontAwesome5} name="calendar-alt" size={4} color="gray.700" />
+                </Box>
+                <Text fontSize="sm" color="gray.600">Member Since</Text>
+              </HStack>
+              <Text fontSize="lg" fontWeight="700" color="gray.800">Jan 2023</Text>
+            </HStack>
+          </VStack>
+        </Box>
+
+        {driverStats.tripsCompleted > 0 ? (
+          <VStack space={3}>
+            <Text fontSize="sm" fontWeight="600" color="gray.700">Achievements</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              <HStack space={3}>
+                <Box
+                  bg="yellow.50"
+                  p={3}
+                  borderRadius="xl"
+                  borderWidth={1}
+                  borderColor="yellow.100"
+                >
+                  <HStack space={2} alignItems="center">
+                    <Icon as={FontAwesome5} name="award" size={4} color="yellow.600" />
+                    <Text fontSize="sm" fontWeight="600" color="yellow.600">
+                      Top Driver
+                    </Text>
+                  </HStack>
+                </Box>
+                <Box
+                  bg="green.50"
+                  p={3}
+                  borderRadius="xl"
+                  borderWidth={1}
+                  borderColor="green.100"
+                >
+                  <HStack space={2} alignItems="center">
+                    <Icon as={FontAwesome5} name="thumbs-up" size={4} color="green.600" />
+                    <Text fontSize="sm" fontWeight="600" color="green.600">
+                      95% Happy Riders
+                    </Text>
+                  </HStack>
+                </Box>
+                <Box
+                  bg="blue.50"
+                  p={3}
+                  borderRadius="xl"
+                  borderWidth={1}
+                  borderColor="blue.100"
+                >
+                  <HStack space={2} alignItems="center">
+                    <Icon as={FontAwesome5} name="clock" size={4} color="blue.600" />
+                    <Text fontSize="sm" fontWeight="600" color="blue.600">
+                      Always On Time
+                    </Text>
+                  </HStack>
+                </Box>
+              </HStack>
+            </ScrollView>
+          </VStack>
+        ) : (
+          <Box
+            bg="gray.50"
+            p={4}
+            borderRadius="xl"
+            borderWidth={1}
+            borderColor="gray.100"
+            mt={4}
+          >
+            <VStack space={3} alignItems="center">
+              <Icon 
+                as={FontAwesome5} 
+                name="trophy" 
+                size={6} 
+                color="gray.300" 
+              />
+              <Text 
+                fontSize="md" 
+                fontWeight="600" 
+                color="gray.500"
+                textAlign="center"
+              >
+                No Achievements Yet
+              </Text>
+              <Text 
+                fontSize="sm" 
+                color="gray.400"
+                textAlign="center"
+              >
+                Complete rides to unlock achievements and rewards
+              </Text>
+            </VStack>
+          </Box>
+        )}
+      </VStack>
+    );
+  };
+
+  const renderInfoContent = () => (
+    <VStack space={4}>
+      <HStack justifyContent="space-between">
+        <Box
+          bg="gray.50"
+          p={3}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+          width="48%"
+        >
+          <HStack space={2} alignItems="center">
+            <Box
+              bg="white"
+              p={2}
+              borderRadius="lg"
+              borderWidth={1}
+              borderColor="gray.100"
+            >
+              <Icon as={Feather} name="user" size={4} color="black" />
+            </Box>
+            <VStack>
+              <Text fontSize="xs" color="gray.500" fontWeight="medium">
+                GENDER
+              </Text>
+              <Text fontSize="sm" color="gray.700" fontWeight="600">
+                {formatGender(userData.gender)}
+              </Text>
+            </VStack>
+          </HStack>
+        </Box>
+        <Box
+          bg="gray.50"
+          p={3}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+          width="48%"
+        >
+          <HStack space={2} alignItems="center">
+            <Box
+              bg="white"
+              p={2}
+              borderRadius="lg"
+              borderWidth={1}
+              borderColor="gray.100"
+            >
+              <Icon as={Feather} name="calendar" size={4} color="black" />
+            </Box>
+            <VStack>
+              <Text fontSize="xs" color="gray.500" fontWeight="medium">
+                AGE
+              </Text>
+              <Text fontSize="sm" color="gray.700" fontWeight="600">
+                {calculateAge(userData.dateOfBirth)}
+              </Text>
+            </VStack>
+          </HStack>
+        </Box>
+      </HStack>
+
+      <HStack justifyContent="space-between">
+        <Box
+          bg="gray.50"
+          p={3}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+          width="48%"
+        >
+          <HStack space={2} alignItems="center">
+            <Box
+              bg="white"
+              p={2}
+              borderRadius="lg"
+              shadow={1}
+            >
+              <Icon as={FontAwesome5} name="phone" size={4} color="gray.700" />
+            </Box>
+            <VStack>
+              <Text fontSize="xs" color="gray.500" fontWeight="medium">PHONE</Text>
+              <Text fontSize="sm" fontWeight="600" color="gray.700">
+                {userData.phone || '2342342423'}
+              </Text>
+            </VStack>
+          </HStack>
+        </Box>
+        <Box
+          bg="gray.50"
+          p={3}
+          borderRadius="xl"
+          borderWidth={1}
+          borderColor="gray.100"
+          width="48%"
+        >
+          <HStack space={2} alignItems="center">
+            <Box
+              bg="white"
+              p={2}
+              borderRadius="lg"
+              shadow={1}
+            >
+              <Icon as={FontAwesome5} name="map-marker-alt" size={4} color="gray.700" />
+            </Box>
+            <VStack>
+              <Text fontSize="xs" color="gray.500" fontWeight="medium">LOCATION</Text>
+              <Text fontSize="sm" fontWeight="600" color="gray.700">
+                New York
+              </Text>
+            </VStack>
+          </HStack>
+        </Box>
+      </HStack>
+     
+    </VStack>
+  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Box style={styles.profileCard}>
-        {/* Header with Avatar and Name */}
-        <HStack alignItems="center" mb={4} space={3}>
+    <ScrollView 
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      <MotiView
+        from={{ opacity: 0, translateY: -20 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={{
+          type: 'timing',
+          duration: 500,
+          easing: Easing.out(Easing.ease),
+        }}
+      >
+        <Box
+          bg="white"
+          borderRadius="3xl"
+          shadow={2}
+          style={{
+            shadowColor: "#000",
+            shadowOffset: {
+              width: 0,
+              height: 4,
+            },
+            shadowOpacity: 0.1,
+            shadowRadius: 12,
+            elevation: 8,
+            margin: 16,
+            marginTop: 24,
+          }}
+        >
           <LinearGradient
-            colors={['#4c669f', '#3b5998', '#192f6a']}
-            style={styles.avatar}
+            colors={['#000000', '#1a1a1a']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 20,
+            }}
           >
-            <Text style={styles.avatarText}>{getInitials()}</Text>
-          </LinearGradient>
-          <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
-            {userData.firstName || ''} {userData.lastName || ''}
-          </Text>
-        </HStack>
-
-        {/* Name and Badge */}
-        <VStack space={2} mb={4}>
-
-          <HStack space={3} alignItems="center">
-            <Box style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {isDriver ? 'Verified Driver' : 'Verified User'}
-              </Text>
-            </Box>
-            <HStack alignItems="center" space={1}>
-              <Icon as={Feather} name="star" size={3} color="yellow.400" />
-              <Text style={styles.ratingText}>4.8</Text>
-            </HStack>
-          </HStack>
-        </VStack>
-
-        {/* Tabs */}
-        <HStack style={styles.tabsList} mb={4}>
-          <Pressable
-            style={[styles.tabButton, activeTab === 'info' && styles.activeTab]}
-            onPress={() => setActiveTab('info')}
-          >
-            <Text style={[styles.tabText, activeTab === 'info' && styles.activeTabText]}>Info</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.tabButton, activeTab === 'stats' && styles.activeTab]}
-            onPress={() => setActiveTab('stats')}
-          >
-            <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>Stats</Text>
-          </Pressable>
-        </HStack>
-
-        {/* Info Content */}
-        {activeTab === 'info' && (
-          <VStack space={3}>
-            <HStack justifyContent="space-between">
-              <HStack space={3} alignItems="center" style={styles.infoItem}>
-                <Icon as={Feather} name="phone" size={4} color="gray.600" />
-                <Text style={styles.infoText}>{userData.phone || '2342342423'}</Text>
-              </HStack>
-              <HStack space={3} alignItems="center" style={styles.infoItem}>
-                <Icon as={Feather} name="user" size={4} color="gray.600" />
-                <Text style={styles.infoText}>{userData.gender || 'Male'}</Text>
-              </HStack>
-            </HStack>
-            <HStack justifyContent="space-between">
-              <HStack space={3} alignItems="center" style={styles.infoItem}>
-                <Icon as={Feather} name="calendar" size={4} color="gray.600" />
-                <Text style={styles.infoText}>{calculateAge(userData.dateOfBirth)} years</Text>
-              </HStack>
-              <HStack space={3} alignItems="center" style={styles.infoItem}>
-                <Icon as={Feather} name="map-pin" size={4} color="gray.600" />
-                <Text style={styles.infoText}>New York</Text>
-              </HStack>
-            </HStack>
-          </VStack>
-        )}
-
-        {/* Stats Content */}
-        {activeTab === 'stats' && (
-          <VStack space={4}>
-            {/* Stats Lines */}
-            <VStack space={3}>
-              <HStack justifyContent="space-between" alignItems="center">
-                <Text style={styles.statLabel}>Trips Completed</Text>
-                <Text style={styles.statValue}>142</Text>
-              </HStack>
-
-              <HStack justifyContent="space-between" alignItems="center">
-                <Text style={styles.statLabel}>Total Distance</Text>
-                <Text style={styles.statValue}>1,230 km</Text>
-              </HStack>
-
-              <HStack justifyContent="space-between" alignItems="center">
-                <Text style={styles.statLabel}>Member Since</Text>
-                <Text style={styles.statValue}>Jan 2023</Text>
-              </HStack>
-            </VStack>
-
-            {/* Achievement Tags */}
-            <VStack space={2}>
-              <Text style={styles.statSectionTitle}>Achievements</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.achievementsScroll}
+            <HStack space={4} alignItems="center">
+              <Box
+                bg="white"
+                p={0.5}
+                borderRadius="full"
+                shadow={3}
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                }}
               >
-                <Box style={styles.achievementBadge}>
-                  <Icon as={Feather} name="award" size={4} color="#FFD700" />
-                  <Text style={styles.achievementText}>Top Driver</Text>
-                </Box>
-                <Box style={styles.achievementBadge}>
-                  <Icon as={Feather} name="thumbs-up" size={4} color="#4CAF50" />
-                  <Text style={styles.achievementText}>95% Happy Riders</Text>
-                </Box>
-                <Box style={styles.achievementBadge}>
-                  <Icon as={Feather} name="clock" size={4} color="#2196F3" />
-                  <Text style={styles.achievementText}>Always On Time</Text>
-                </Box>
-                <Box style={styles.achievementBadge}>
-                  <Icon as={Feather} name="star" size={4} color="#FFA500" />
-                  <Text style={styles.achievementText}>5-Star Rating</Text>
-                </Box>
-              </ScrollView>
-            </VStack>
-          </VStack>
-        )}
+                <Avatar
+                  bg="gray.800"
+                  size="lg"
+                  source={null}
+                >
+                  {getInitials()}
+                </Avatar>
+              </Box>
+              <VStack flex={1}>
+                <Text color="white" fontSize="xl" fontWeight="700" numberOfLines={1}>
+                  {userData.firstName || ''} {userData.lastName || ''}
+                </Text>
+                <HStack space={3} alignItems="center" mt={1}>
+                  <Box
+                    bg={isDriver ? (userData.licenseVerified ? "rgba(255,255,255,0.2)" : "rgba(255,165,0,0.2)") : "rgba(255,255,255,0.2)"}
+                    px={2}
+                    py={1}
+                    borderRadius="full"
+                  >
+                    <HStack space={2} alignItems="center">
+                      <Icon 
+                        as={MaterialIcons} 
+                        name={driverVerified ? "verified" : "error-outline"} 
+                        size="xs" 
+                        color="white" 
+                      />
+                      <Text color="white" fontSize="xs" fontWeight="600">
+                        {isDriver
+                          ? (driverVerified ? 'VERIFIED DRIVER' : 'VERIFICATION NEEDED')
+                          : 'VERIFIED USER'}
+                      </Text>
 
-      </Box>
+                    </HStack>
+                  </Box>
+                  <HStack space={1} alignItems="center">
+                    <Icon as={FontAwesome5} name="star" size={3} color="yellow.400" />
+                    <Text color="white" fontSize="sm" fontWeight="600">
+                      {calculateAverageRating(reviews)}
+                    </Text>
+                  </HStack>
+                </HStack>
+              </VStack>
+            </HStack>
+          </LinearGradient>
+
+          <Box p={5}>
+            <HStack 
+              bg="gray.50"
+              p={1}
+              borderRadius="2xl"
+              mb={4}
+              borderWidth={1}
+              borderColor="gray.100"
+            >
+              <Pressable
+                flex={1}
+                onPress={() => setActiveTab('info')}
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <Box
+                  bg={activeTab === 'info' ? 'black' : 'transparent'}
+                  py={2}
+                  borderRadius="xl"
+                  alignItems="center"
+                >
+                  <Text
+                    fontSize="sm"
+                    fontWeight="600"
+                    color={activeTab === 'info' ? 'white' : 'gray.500'}
+                  >
+                    Info
+                  </Text>
+                </Box>
+              </Pressable>
+              <Pressable
+                flex={1}
+                onPress={() => setActiveTab('stats')}
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <Box
+                  bg={activeTab === 'stats' ? 'black' : 'transparent'}
+                  py={2}
+                  borderRadius="xl"
+                  alignItems="center"
+                >
+                  <Text
+                    fontSize="sm"
+                    fontWeight="600"
+                    color={activeTab === 'stats' ? 'white' : 'gray.500'}
+                  >
+                    Stats
+                  </Text>
+                </Box>
+              </Pressable>
+            </HStack>
+
+            {activeTab === 'info' && renderInfoContent()}
+
+            {activeTab === 'stats' && renderStatsContent()}
+          </Box>
+        </Box>
+      </MotiView>
 
       {/* Keep existing Quick Actions and Logout button */}
       <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -238,7 +660,7 @@ const ProfileScreen = () => {
         </HStack>
       </Pressable>
 
-      {/* Add the ride management section */}
+      
     </ScrollView>
   );
 };

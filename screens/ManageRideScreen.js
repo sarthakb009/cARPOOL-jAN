@@ -8,6 +8,9 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  View,
+  PanResponder, 
+  Image,
 } from 'react-native';
 import {
   Box,
@@ -23,7 +26,7 @@ import {
   useToast,
   Spinner
 } from 'native-base';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
@@ -31,6 +34,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import EventSource from 'react-native-event-source'; // Ensure this polyfill is correctly installed
 import MapScreen from './MapScreen';
+import { Linking } from 'react-native';
 
 // Get device width for animations
 const { width } = Dimensions.get('window');
@@ -79,9 +83,14 @@ const buttonStyles = {
 };
 
 const ManageRideScreen = ({ route, navigation }) => {
+  // Add validation for route.params
+
+
   const { ride: initialRide } = route.params;
-  const [ride, setRide] = useState(initialRide);
-  const [currentRideStatus, setCurrentRideStatus] = useState(initialRide.status || null);
+  
+  // Initialize states with safe defaults
+  const [ride, setRide] = useState(initialRide || {});
+  const [currentRideStatus, setCurrentRideStatus] = useState(initialRide?.status || 'PENDING');
   const [rideState, setRideState] = useState(RideStates.WAITING_FOR_REQUESTS);
   const [acceptedPassengers, setAcceptedPassengers] = useState([]);
   const [checkedInPassengers, setCheckedInPassengers] = useState([]);
@@ -97,6 +106,7 @@ const ManageRideScreen = ({ route, navigation }) => {
   const [subRideState, setSubRideState] = useState('EN_ROUTE_PICKUP'); // For internal sub-states during IN_PROGRESS
   const [driverId, setDriverId] = useState(null);
   const [allRequests, setAllRequests] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
 
   // Coordinates and ETA States
   const [passengerPickupLocation, setPassengerPickupLocation] = useState(null);
@@ -124,6 +134,105 @@ const ManageRideScreen = ({ route, navigation }) => {
   // Add these new state variables with your other states
   const [isAccepting, setIsAccepting] = useState({});
   const [isRejecting, setIsRejecting] = useState({});
+  const [position, setPosition] = useState(new Animated.Value(0));
+  const maxWidth = 300; // Slider width in pixels
+
+  // Add these functions after other function declarations
+const callPassenger = (passenger) => {
+  if (passenger.phone) {
+    Linking.openURL(`tel:${passenger.phone}`);
+  } else {
+    toast.show({
+      title: 'Unable to Call',
+      status: 'error',
+      description: "Passenger's phone number is not available.",
+      placement: 'top',
+    });
+  }
+};
+
+const messagePassenger = (passenger) => {
+  if (passenger.phone) {
+    Linking.openURL(`sms:${passenger.phone}`);
+  } else {
+    toast.show({
+      title: 'Unable to Message',
+      status: 'error',
+      description: "Passenger's phone number is not available.",
+      placement: 'top',
+    });
+  }
+};
+
+
+const panResponder = PanResponder.create({
+  onStartShouldSetPanResponder: () => true,
+  onPanResponderMove: (_, gestureState) => {
+    const newPosition = Math.min(
+      Math.max(0, gestureState.dx),
+      maxWidth - 50 // Account for the knob width
+    );
+    position.setValue(newPosition);
+  },
+  onPanResponderRelease: async (_, gestureState) => {
+    if (gestureState.dx >= maxWidth * 0.8) { // Reduced threshold to 80% for better UX
+      // Animate to complete position
+      Animated.timing(position, {
+        toValue: maxWidth - 50,
+        duration: 100,
+        useNativeDriver: false,
+      }).start();
+
+      // Trigger haptic feedback
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // Show confirmation alert
+      Alert.alert(
+        "End Journey",
+        "Are you sure you want to end this journey?",
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              // Reset slider position if cancelled
+              Animated.timing(position, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: false,
+              }).start();
+            }
+          },
+          {
+            text: "End Journey",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await handleEndRide();
+              } catch (error) {
+                console.error('Error ending ride:', error);
+                // Reset slider position on error
+                Animated.timing(position, {
+                  toValue: 0,
+                  duration: 200,
+                  useNativeDriver: false,
+                }).start();
+              }
+            }
+          }
+        ]
+      );
+    } else {
+      // Reset position if not slid far enough
+      Animated.timing(position, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start();
+    }
+  },
+});
+
 
   // Add this handler function with other handlers
   const handleLocationSelect = useCallback((location) => {
@@ -197,9 +306,18 @@ const ManageRideScreen = ({ route, navigation }) => {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
       const userId = await AsyncStorage.getItem('userId');
       setDriverId(userId);
-      // Fetch ride details without deleting any properties
+
+      if (!initialRide?.id) {
+        throw new Error('No ride ID provided');
+      }
+
+      // Fetch ride details
       const response = await axios.get(
         `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getById?id=${initialRide.id}`,
         {
@@ -207,41 +325,54 @@ const ManageRideScreen = ({ route, navigation }) => {
         }
       );
 
-      if (response.data) {
-        if (!response.data.checkinStatus) {
-          // If checkinStatus is false, use source coordinates
+      if (!response.data) {
+        throw new Error('No ride data received');
+      }
+
+      // Update ride data
+      const rideData = response.data;
+      setRide(rideData);
+      
+      // Update status only if we have valid data
+      if (rideData.status) {
+        setCurrentRideStatus(rideData.status);
+      }
+
+      // Process coordinates if available
+      if (rideData) {
+        if (!rideData.checkinStatus) {
           const sourceCoords = {
-            latitude: response.data.sourceLatitude,
-            longitude: response.data.sourceLongitude,
+            latitude: rideData.sourceLatitude || 0,
+            longitude: rideData.sourceLongitude || 0,
           };
-          console.log('Source Coordinates:', sourceCoords);
           setFormattedPassengerPickup(sourceCoords);
         } else {
-          // If checkinStatus is true, use destination coordinates
           const destinationCoords = {
-            latitude: response.data.destinationLatitude,
-            longitude: response.data.destinationLongitude,
+            latitude: rideData.destinationLatitude || 0,
+            longitude: rideData.destinationLongitude || 0,
           };
-          console.log('Destination Coordinates:', destinationCoords);
           setFormattedPassengerDrop(destinationCoords);
         }
       }
-      const rideData = response.data;
-      setRide(rideData);
-      // Initialize currentRideStatus with fetched status if not already set
-      if (!currentRideStatus && rideData.status) {
-        setCurrentRideStatus(rideData.status);
+
+      // Setup SSE connections
+      if (token && initialRide.id) {
+        setupRideRequestsEventSource(initialRide.id, token);
+        setupRideStatusEventSource(initialRide.id, token);
       }
-      // Setup SSE for ride requests history and ride status
-      setupRideRequestsEventSource(initialRide.id, token);
-      setupRideStatusEventSource(initialRide.id, token);
     } catch (error) {
       console.error('Initialization Error:', error);
-      setError('Failed to initialize. Please try again.');
+      setError(error.message || 'Failed to initialize. Please try again.');
+      toast.show({
+        title: "Error",
+        description: error.message || "Failed to load ride details",
+        status: "error",
+        placement: "top"
+      });
     } finally {
       setLoading(false);
     }
-  }, [initialRide.id, currentRideStatus, setupRideRequestsEventSource, setupRideStatusEventSource]);
+  }, [initialRide?.id, setupRideRequestsEventSource, setupRideStatusEventSource, toast]);
 
   useEffect(() => {
     initialize();
@@ -377,21 +508,27 @@ const ManageRideScreen = ({ route, navigation }) => {
         // Parse the JSON data
         const parsedData = JSON.parse(eventData);
 
+        // Add additional validation
+        if (!parsedData) {
+          console.warn('Empty or invalid event data received');
+          return;
+        }
+
         // Validate presence of essential passenger information
         if (!parsedData.passengerId || !parsedData.passengerName) {
           console.warn('Passenger information missing in event data');
           return;
         }
 
-        // Construct the parsed request object
+        // Construct the parsed request object with status validation
         const parsedRequest = {
           id: parsedData.id,
-          status: parsedData.status,
+          status: parsedData.status || 'PENDING', // Provide default status
           passengerId: parsedData.passengerId,
           name: parsedData.passengerName,
           passengerJourneyId: parsedData.passengerJourneyId,
-          timestamp: new Date(parsedData.requestTime),
-          // Additional passenger details
+          timestamp: new Date(parsedData.requestTime || Date.now()),
+          // Additional passenger details with default values
           startLocation: parsedData.startLocation || 'Unknown',
           startLatitude: typeof parsedData.startLatitude === 'number' ? parsedData.startLatitude : 0,
           startLongitude: typeof parsedData.startLongitude === 'number' ? parsedData.startLongitude : 0,
@@ -400,39 +537,41 @@ const ManageRideScreen = ({ route, navigation }) => {
           endLongitude: typeof parsedData.endLongitude === 'number' ? parsedData.endLongitude : 0,
         };
 
-        // Update allRequests state
-        setAllRequests((prev) => ({
-          ...prev,
-          [parsedRequest.id]: parsedRequest,
-        }));
+        // Update allRequests state only if we have a valid request
+        if (parsedRequest.id) {
+          setAllRequests((prev) => ({
+            ...prev,
+            [parsedRequest.id]: parsedRequest,
+          }));
 
-        // If the request status is 'Accepted', add to acceptedPassengers
-        if (parsedRequest.status === 'Accepted') {
-          setAcceptedPassengers((prev) => {
-            const exists = prev.find((p) => p.id === parsedRequest.id);
-            if (exists) return prev;
-            return [
-              ...prev,
-              {
-                id: parsedRequest.id,
-                name: parsedRequest.name,
-                passengerId: parsedRequest.passengerId,
-                passengerJourneyId: parsedRequest.passengerJourneyId,
-                // Additional passenger details
-                firstName: parsedData.passengerName.split(' ')[0] || 'N/A',
-                lastName: parsedData.passengerName.split(' ')[1] || 'N/A',
-                phone: parsedData.rideDto?.driverDetails?.driverPhone || 'N/A',
-                email: parsedData.rideDto?.driverDetails?.email || 'N/A',
-                startLocation: parsedData.startLocation || 'Unknown',
-                //startLocation: parsedData.startLocation,
-                endLocation: parsedData.endLocation || 'Unknown',
-                startLatitude: typeof parsedData.startLatitude === 'number' ? parsedData.startLatitude : 0,
-                startLongitude: typeof parsedData.startLongitude === 'number' ? parsedData.startLongitude : 0,
-                endLatitude: typeof parsedData.endLatitude === 'number' ? parsedData.endLatitude : 0,
-                endLongitude: typeof parsedData.endLongitude === 'number' ? parsedData.endLongitude : 0,
-              },
-            ];
-          });
+          // Check status before updating acceptedPassengers
+          if (parsedRequest.status === 'Accepted') {
+            setAcceptedPassengers((prev) => {
+              const exists = prev.find((p) => p.id === parsedRequest.id);
+              if (exists) return prev;
+              
+              return [
+                ...prev,
+                {
+                  id: parsedRequest.id,
+                  name: parsedRequest.name,
+                  passengerId: parsedRequest.passengerId,
+                  passengerJourneyId: parsedRequest.passengerJourneyId,
+                  // Additional passenger details with null checks
+                  firstName: parsedData.passengerName?.split(' ')[0] || 'N/A',
+                  lastName: parsedData.passengerName?.split(' ')[1] || 'N/A',
+                  phone: parsedData.rideDto?.driverDetails?.driverPhone || 'N/A',
+                  email: parsedData.rideDto?.driverDetails?.email || 'N/A',
+                  startLocation: parsedData.startLocation || 'Unknown',
+                  endLocation: parsedData.endLocation || 'Unknown',
+                  startLatitude: typeof parsedData.startLatitude === 'number' ? parsedData.startLatitude : 0,
+                  startLongitude: typeof parsedData.startLongitude === 'number' ? parsedData.startLongitude : 0,
+                  endLatitude: typeof parsedData.endLatitude === 'number' ? parsedData.endLatitude : 0,
+                  endLongitude: typeof parsedData.endLongitude === 'number' ? parsedData.endLongitude : 0,
+                },
+              ];
+            });
+          }
         }
       } catch (error) {
         console.error('Error parsing ride request event data:', error);
@@ -535,7 +674,9 @@ const ManageRideScreen = ({ route, navigation }) => {
       setLocationSubscription(null);
     }
   }, [locationSubscription]);
+  
 
+  // Handle accepting a ride request
   // Handle accepting a ride request
   const handleAcceptRequest = useCallback(
     async (request) => {
@@ -543,10 +684,11 @@ const ManageRideScreen = ({ route, navigation }) => {
       setIsAccepting(prev => ({ ...prev, [request.id]: true }));
       try {
         const token = await AsyncStorage.getItem('userToken');
-        
+        const driverId = ride.driverDetails.id;
+        console.log('Accepting request with driverId:', driverId);
         // Accept the request
         await axios.put(
-          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/respond?requestId=${request.id}&status=Accepted`,
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/respond?requestId=${request.id}&status=Accepted&driverId=${driverId}`,
           {},
           {
             headers: { Authorization: `Bearer ${token}` },
@@ -571,6 +713,7 @@ const ManageRideScreen = ({ route, navigation }) => {
     },
     [toast, isAccepting, initialize] // Add initialize to dependencies
   );
+  
 
   // Handle rejecting a ride request
   const handleRejectRequest = useCallback(
@@ -850,35 +993,67 @@ const ManageRideScreen = ({ route, navigation }) => {
   }, [ride.id, fetchPassengerLocations, toast, isCheckingOut]);
 
   // Handle cancelling the ride offer
-  const cancelRideOffer = useCallback(
-    async () => {
-      try {
-        const token = await AsyncStorage.getItem('userToken');
-        const response = await axios.post(
-          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/cancel?rideId=${ride.id}`,
-          {},
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+  const cancelRideAsDriver = async () => {
+    try {
+      setIsLoading(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const driverId = await AsyncStorage.getItem('driverId');
 
-        if (response.data === 'Ride Cancelled!') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          toast.show({
-            title: 'Success',
-            description: 'Ride offer cancelled successfully!',
-            status: 'success',
-            placement: 'top',
-          });
-          navigation.goBack();
-        }
-      } catch (error) {
-        console.error('Error cancelling ride offer:', error);
-        Alert.alert('Error', 'Failed to cancel ride offer. Please try again.');
-      }
-    },
-    [ride.id, navigation, toast]
-  );
+      Alert.alert(
+        'Cancel Ride',
+        'Are you sure you want to cancel this ride? This action cannot be undone.',
+        [
+          {
+            text: 'No',
+            style: 'cancel',
+          },
+          {
+            text: 'Yes, Cancel',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                const response = await axios.put(
+                  `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/cancelRideByDriver?driverId=${driverId}&rideId=${ride.id}`,
+                  {},
+                  { headers: { Authorization: `Bearer ${token}` } }
+                );
+
+                console.log('Cancellation response:', response.data); // Log the response
+                if (response.data) {
+                  toast.show({
+                    title: 'Ride Cancelled',
+                    description: 'The ride has been cancelled successfully.',
+                    status: 'success',
+                    placement: 'top',
+                  });
+                  navigation.goBack();
+                }
+              } catch (error) {
+                console.error('Error cancelling ride:', error.response ? error.response.data : error.message);
+                toast.show({
+                  title: 'Error',
+                  description: error.response?.data?.message || 'Failed to cancel ride. Please try again.',
+                  status: 'error',
+                  placement: 'top',
+                });
+              } finally {
+                setIsLoading(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Error in cancelRideAsDriver:', error);
+      toast.show({
+        title: 'Error',
+        description: 'Failed to process request. Please try again.',
+        status: 'error',
+        placement: 'top',
+      });
+      setIsLoading(false);
+    }
+  };
 
   // Calculate ETA using HERE API
   const calculateETA = useCallback(async (origin, destination) => {
@@ -940,6 +1115,23 @@ const ManageRideScreen = ({ route, navigation }) => {
       calculateETA(originCoords, destinationCoords);
     }
   }, [driverLocation, formattedDriverLocation, formattedPassengerPickup, formattedPassengerDrop, subRideState, calculateETA]);
+
+  // Function to calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (startCoords, endCoords) => {
+    const toRad = (value) => (value * Math.PI) / 180;
+
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = toRad(endCoords.latitude - startCoords.latitude);
+    const dLon = toRad(endCoords.longitude - startCoords.longitude);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(startCoords.latitude)) *
+        Math.cos(toRad(endCoords.latitude)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in kilometers
+  };
 
   // Render Coordinates Card
   const renderCoordinatesCard = useCallback(() => {
@@ -1209,7 +1401,7 @@ const ManageRideScreen = ({ route, navigation }) => {
               Average wait time: 5-10 minutes
             </Text>
             <Button
-              onPress={cancelRideOffer}
+              onPress={cancelRideAsDriver}
               bg="gray.400"
               _text={{ color: 'white', fontWeight: 'bold' }}
               rounded="full"
@@ -1405,25 +1597,33 @@ const ManageRideScreen = ({ route, navigation }) => {
                         </Text>
                       </VStack>
                     </HStack>
-                    <Pressable
-                      style={[
-                        buttonStyles.actionButton.base,
-                        buttonStyles.actionButton.secondary,
-                      ]}
-                      onPress={() => {
-                        Alert.alert('Contact', `Contacting ${ride.passengers.find(p => p.passengerId === passenger.passengerId)?.firstName}`);
-                      }}
-                    >
-                      <Icon
-                        as={Ionicons}
-                        name="call"
-                        size={buttonStyles.iconStyle.size}
-                        color="black"
-                      />
-                    </Pressable>
                   </HStack>
-                </Box>
-              ))}
+
+                  {/* Contact Buttons */}
+                  <HStack space="2" mt="6">
+                    <Button
+                      flex={1}
+                      onPress={() => callPassenger(passenger)}
+                      leftIcon={<Icon as={Ionicons} name="call" size="sm" color="white" />}
+                      bg="black"
+                      _text={{ color: 'white' }}
+                      rounded="full"
+                    >
+                      Call
+                    </Button>
+                    <Button
+                      flex={1}
+                      onPress={() => messagePassenger(passenger)}
+                      leftIcon={<Icon as={Ionicons} name="chatbubble" size="sm" color="black" />}
+                      bg="coolGray.100"
+                      _text={{ color: 'black' }}
+                      rounded="full"
+                    >
+                      Message
+                    </Button>
+                  </HStack>
+                    </Box>
+                  ))}
             </VStack>
             <Button
               onPress={handleStartRide}
@@ -1514,6 +1714,7 @@ const ManageRideScreen = ({ route, navigation }) => {
                           </Text> */}
                         </VStack>
                       </HStack>
+                      
                       <VStack space="4">
                         {ride.passengers.map((passenger) => (
                           // Only render Box if there's a button to show (either check-in or drop-off)
@@ -1592,7 +1793,32 @@ const ManageRideScreen = ({ route, navigation }) => {
                       </VStack>
 
                     </HStack>
+                    {/* Contact Buttons */}
+                    <HStack space="2" mt="6">
+                      <Button
+                        flex={1}
+                        onPress={() => callPassenger(passenger)}
+                        leftIcon={<Icon as={Ionicons} name="call" size="sm" color="white" />}
+                        bg="black"
+                        _text={{ color: 'white' }}
+                        rounded="full"
+                      >
+                        Call
+                      </Button>
+                      <Button
+                        flex={1}
+                        onPress={() => messagePassenger(passenger)}
+                        leftIcon={<Icon as={Ionicons} name="chatbubble" size="sm" color="black" />}
+                        bg="coolGray.100"
+                        _text={{ color: 'black' }}
+                        rounded="full"
+                      >
+                        Message
+                      </Button>
+                    </HStack>
                   </Box>
+
+                  
                 ))}
               </VStack>
               {/* Conditionally render End Journey button */}
@@ -1609,27 +1835,27 @@ const ManageRideScreen = ({ route, navigation }) => {
               )} */}
               {ride.passengers &&
                 ride.passengers.length > 0 &&
-                ride.passengers.every(passenger => passenger.checkinStatus && passenger.checkoutStatus) && (
-                  <Button
-                    onPress={handleEndRide}
-                    bg="black"
-                    _text={{ color: 'white', fontWeight: 'bold' }}
-                    rounded="full"
-                    mt="4"
-                    isDisabled={isEndingJourney}
-                  >
-                    <HStack space={2} alignItems="center">
-                      {isEndingJourney ? (
-                        <>
-                          <Spinner size="sm" color="white" />
-                          <Text color="white" fontWeight="bold">Ending...</Text>
-                        </>
-                      ) : (
-                        <Text color="white" fontWeight="bold">End Journey</Text>
-                      )}
-                    </HStack>
-                  </Button>
+                ride.passengers.every(
+                  (passenger) => passenger.checkinStatus && passenger.checkoutStatus
+                ) && (
+                  <View style={styles.sliderWrapper}>
+                    <View style={styles.sliderContainer}>
+                      <View style={styles.sliderTrack}>
+                        <Animated.View
+                          style={[
+                            styles.sliderKnob,
+                            { transform: [{ translateX: position }] },
+                          ]}
+                          {...panResponder.panHandlers}
+                        >
+                          <MaterialIcons name="navigation" size={20} color="white" />
+                        </Animated.View>
+                        <Text style={styles.sliderText}>Slide to End Journey</Text>
+                      </View>
+                    </View>
+                  </View>
                 )}
+
             </Box>
           </>
         );
@@ -1662,89 +1888,101 @@ const ManageRideScreen = ({ route, navigation }) => {
   ]);
 
   // Render journey completed section
-  const renderJourneyCompleted = useCallback(() => (
-    <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
-      <HStack alignItems="center" mb="4">
-        <Icon as={Feather} name="check-circle" size="6" color="purple.600" mr="2" />
-        <Text fontSize="lg" fontWeight="bold" color="black">
-          Journey Completed
-        </Text>
-      </HStack>
-      <Text fontSize="sm" color="gray.600" mb="4">
-        Great job! You've successfully completed your journey. Here's a summary of your
-        trip.
-      </Text>
-      <Box bg="gray.50" p="4" rounded="lg" mb="4">
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.500">
-            Total Distance
-          </Text>
-          <Text fontSize="sm" fontWeight="bold">
-            {typeof ride.distance === 'number' ? `${ride.distance.toFixed(2)} km` : 'N/A'}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.500">
-            Duration
-          </Text>
-          <Text fontSize="sm" fontWeight="bold">
-            {calculateDuration(ride.rideStartTime, ride.rideEndTime)}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.500">
-            Passengers
-          </Text>
-          <Text fontSize="sm" fontWeight="bold">
-            {typeof acceptedPassengers.length === 'number' ? acceptedPassengers.length : 'N/A'}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.500">
-            Earnings
-          </Text>
-          <Text fontSize="sm" fontWeight="bold">
-            {typeof ride.price === 'number' ? `$${ride.price.toFixed(2)}` : 'N/A'}
-          </Text>
-        </HStack>
-      </Box>
+  const renderJourneyCompleted = useCallback(() => {
+    const startCoords = {
+      latitude: ride.sourceLatitude, // Assuming these are available in the ride object
+      longitude: ride.sourceLongitude,
+    };
+    const endCoords = {
+      latitude: ride.destinationLatitude, // Assuming these are available in the ride object
+      longitude: ride.destinationLongitude,
+    };
+    const totalDistance = calculateDistance(startCoords, endCoords).toFixed(2); // Calculate distance
 
-      {/* Add Passengers List */}
-      <Text fontSize="md" fontWeight="bold" color="black" mb="3">
-        Passengers
-      </Text>
-      <VStack space="3" mb="4">
-        {acceptedPassengers.map((passenger) => (
-          <Box
-            key={passenger.id}
-            bg="gray.100"
-            p="3"
-            rounded="lg"
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="space-between"
-          >
-            <HStack space="3" alignItems="center">
-              <Avatar bg="blue.500">
-                <Text>
-                  {passenger.name ? passenger.name[0].toUpperCase() : 'P'}
-                </Text>
-              </Avatar>
-              <VStack>
-                <Text fontWeight="bold">{passenger.name || 'Passenger'}</Text>
-                <Text fontSize="sm" color="gray.500">
-                  Journey Completed
-                </Text>
-              </VStack>
-            </HStack>
-            <Badge colorScheme="green" variant="subtle" rounded="full" px="2">
-              Completed
-            </Badge>
-          </Box>
-        ))}
-      </VStack>
-    </Box>
-  ), [ride.distance, ride.rideStartTime, ride.rideEndTime, ride.price, acceptedPassengers.length, acceptedPassengers, navigation]);
+    return (
+      <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+        <HStack alignItems="center" mb="4">
+          <Icon as={Feather} name="check-circle" size="6" color="purple.600" mr="2" />
+          <Text fontSize="lg" fontWeight="bold" color="black">
+            Journey Completed
+          </Text>
+        </HStack>
+        <Text fontSize="sm" color="gray.600" mb="4">
+          Great job! You've successfully completed your journey. Here's a summary of your
+          trip.
+        </Text>
+        <Box bg="gray.50" p="4" rounded="lg" mb="4">
+          <HStack justifyContent="space-between">
+            <Text fontSize="sm" color="gray.500">
+              Total Distance
+            </Text>
+            <Text fontSize="sm" fontWeight="bold">
+              {totalDistance} km
+            </Text>
+          </HStack>
+          <HStack justifyContent="space-between">
+            <Text fontSize="sm" color="gray.500">
+              Duration
+            </Text>
+            <Text fontSize="sm" fontWeight="bold">
+              {calculateDuration(ride.rideStartTime, ride.rideEndTime)}
+            </Text>
+          </HStack>
+          <HStack justifyContent="space-between">
+            <Text fontSize="sm" color="gray.500">
+              Passengers
+            </Text>
+            <Text fontSize="sm" fontWeight="bold">
+              {typeof acceptedPassengers.length === 'number' ? acceptedPassengers.length : 'N/A'}
+            </Text>
+          </HStack>
+          <HStack justifyContent="space-between">
+            <Text fontSize="sm" color="gray.500">
+              Earnings
+            </Text>
+            <Text fontSize="sm" fontWeight="bold">
+              {typeof ride.price === 'number' ? `${ride.price.toFixed(2)}` : 'N/A'}
+            </Text>
+          </HStack>
+        </Box>
+
+        {/* Add Passengers List */}
+        <Text fontSize="md" fontWeight="bold" color="black" mb="3">
+          Passengers
+        </Text>
+        <VStack space="3" mb="4">
+          {acceptedPassengers.map((passenger) => (
+            <Box
+              key={passenger.id}
+              bg="gray.100"
+              p="3"
+              rounded="lg"
+              flexDirection="row"
+              alignItems="center"
+              justifyContent="space-between"
+            >
+              <HStack space="3" alignItems="center">
+                <Avatar bg="blue.500">
+                  <Text>
+                    {passenger.name ? passenger.name[0].toUpperCase() : 'P'}
+                  </Text>
+                </Avatar>
+                <VStack>
+                  <Text fontWeight="bold">{passenger.name || 'Passenger'}</Text>
+                  <Text fontSize="sm" color="gray.500">
+                    Journey Completed
+                  </Text>
+                </VStack>
+              </HStack>
+              <Badge colorScheme="green" variant="subtle" rounded="full" px="2">
+                Completed
+              </Badge>
+            </Box>
+          ))}
+        </VStack>
+      </Box>
+    );
+  }, [ride, acceptedPassengers, navigation]);
 
   // Calculate duration between start and end times
   const calculateDuration = useCallback((startTime, endTime) => {
@@ -1848,6 +2086,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-});
+  sliderWrapper: {
+      marginTop: 16,
+      alignItems: 'center',
+    },
+    sliderContainer: {
+      width: 300,
+      alignItems: 'center',
+    },
+    sliderTrack: {
+      width: 300,
+      height: 60,
+      backgroundColor: '#e0e0e0',
+      borderRadius: 30,
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    sliderKnob: {
+      width: 60,
+      height: 60,
+      backgroundColor: 'black',
+      borderRadius: 30,
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'absolute',
+      zIndex: 2,
+    },
+    sliderText: {
+      position: 'absolute',
+      width: '100%',
+      textAlign: 'center',
+      color: '#666',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+  });
+  
 
 export default ManageRideScreen;

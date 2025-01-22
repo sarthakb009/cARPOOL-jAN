@@ -13,8 +13,7 @@ const { width } = Dimensions.get('window');
 const STEPS = ['Location', 'Date & Time', 'Details', 'Confirm'];
 const HERE_API_KEY = 'BLiCQHHuN3GFygSHe27hv4rRBpbto7K35v7HXYtANC8';
 
-const ScheduleRideScreen = () => {
-  const navigation = useNavigation();
+const ScheduleRideScreen = ({ navigation }) => {
   const route = useRoute();
   const { isEditing, rideData } = route.params || {};
 
@@ -334,6 +333,10 @@ const ScheduleRideScreen = () => {
     }
   };
 
+  const handleGoBack = () => {
+    navigation.goBack();
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <VStack space={6}>
@@ -344,7 +347,7 @@ const ScheduleRideScreen = () => {
             </Text>
           </Animated.View>
           <Button
-            onPress={() => navigation.goBack()}
+            onPress={handleGoBack}
             variant="ghost"
             colorScheme="blue"
             leftIcon={<Icon as={Feather} name="arrow-left" size="sm" />}

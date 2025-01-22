@@ -31,6 +31,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import EventSource from 'react-native-event-source';
 import * as Location from 'expo-location';
 import MapScreen from './MapScreen';
+import { calculateAverageRating } from '../utils/ratingUtils';
 
 const { width } = Dimensions.get('window');
 
@@ -48,7 +49,17 @@ const RideStates = {
 const RideDetailsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { rideId } = route.params;
+  const { rideId: routeRideId, isDriver, rideType, initialFetch } = route.params;
+  
+  // Initialize ride state with full object structure
+  const [ride, setRide] = useState({
+    id: routeRideId,
+    sourceLatitude: null,
+    sourceLongitude: null,
+    destinationLatitude: null,
+    destinationLongitude: null,
+    status: null,
+  });
 
   // State variables
   const [rideState, setRideState] = useState(RideStates.NOT_JOINED);
@@ -63,6 +74,7 @@ const RideDetailsScreen = () => {
   const [userLocation, setUserLocation] = useState(null);
   const [eta, setEta] = useState(null);
   const [previousDriverLocation, setPreviousDriverLocation] = useState(null);
+  const [currentRideStatus, setCurrentRideStatus ] = useState(null)
   const [acceptedPassengers, setAcceptedPassengers] = useState([]);
   const [formattedPassengerPickup, setFormattedPassengerPickup] = useState(null);
   const [formattedPassengerDrop, setFormattedPassengerDrop] = useState(null);
@@ -70,6 +82,10 @@ const RideDetailsScreen = () => {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [locationSubscription, setLocationSubscription] = useState(null);
   const [formattedDriverLocation, setFormattedDriverLocation] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [viewType, setViewType] = useState(isDriver ? 'driver' : 'passenger');
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [driverId, setDriverId] = useState(null);
 
   const theme = useTheme();
   const toast = useToast();
@@ -90,9 +106,156 @@ const RideDetailsScreen = () => {
   // Ref to manage EventSource
   const eventSourceRef = useRef(null);
 
-  // Optimized fetchRideDetails with useCallback (removed rideState and isFetching from dependencies)
+  // Function to fetch passenger locations
+  const fetchPassengerLocations = useCallback(async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await axios.get(
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/passengerLocation?rideId=${routeRideId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      console.log('Passenger Location Response:', response.data);
+
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        const passengerData = response.data[0];
+
+        // Store the checkinStatus
+        setRide((prevRide) => ({
+          ...prevRide,
+          checkinStatus: passengerData.checkinStatus,
+        }));
+
+        // Set coordinates based on checkinStatus
+        if (passengerData.checkinStatus) {
+          const destinationCoords = {
+            latitude: passengerData.destinationLatitude,
+            longitude: passengerData.destinationLongitude,
+          };
+          console.log('Destination Coordinates:', destinationCoords);
+          setFormattedPassengerDrop(destinationCoords);
+        } else {
+          const sourceCoords = {
+            latitude: passengerData.sourceLatitude,
+            longitude: passengerData.sourceLongitude,
+          };
+          console.log('Source Coordinates:', sourceCoords);
+          setFormattedPassengerPickup(sourceCoords);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching passenger locations:', error);
+    }
+  }, [routeRideId]);
+
+  // Initialize ride details and set up SSE
+  const initialize = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const userId = await AsyncStorage.getItem('userId');
+      setDriverId(userId);
+
+      if (!routeRideId) {
+        throw new Error('No ride ID provided');
+      }
+
+      // Fetch ride details
+      const response = await axios.get(
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getById?id=${routeRideId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      if (!response.data) {
+        throw new Error('No ride data received');
+      }
+
+      // Update ride data
+      const rideData = response.data;
+      setRide(rideData);
+      
+      // Update status only if we have valid data
+      if (rideData.status) {
+        setCurrentRideStatus(rideData.status);
+      }
+
+      // Process coordinates if available
+      if (rideData) {
+        if (!rideData.checkinStatus) {
+          const sourceCoords = {
+            latitude: rideData.sourceLatitude || 0,
+            longitude: rideData.sourceLongitude || 0,
+          };
+          setFormattedPassengerPickup(sourceCoords);
+        } else {
+          const destinationCoords = {
+            latitude: rideData.destinationLatitude || 0,
+            longitude: rideData.destinationLongitude || 0,
+          };
+          setFormattedPassengerDrop(destinationCoords);
+        }
+      }
+    } catch (error) {
+      console.error('Initialization Error:', error);
+      setError(error.message || 'Failed to initialize. Please try again.');
+      toast.show({
+        title: "Error",
+        description: error.message || "Failed to load ride details",
+        status: "error",
+        placement: "top"
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [routeRideId, toast]);
+
+  useEffect(() => {
+    initialize();
+    fetchPassengerLocations();
+  }, [initialize, fetchPassengerLocations]);
+
+  // Function to calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (startCoords, endCoords) => {
+    const toRad = (value) => (value * Math.PI) / 180;
+
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = toRad(endCoords.latitude - startCoords.latitude);
+    const dLon = toRad(endCoords.longitude - startCoords.longitude);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(startCoords.latitude)) *
+        Math.cos(toRad(endCoords.latitude)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in kilometers
+  };
+
+  // Calculate duration between start and end times
+  const calculateDuration = useCallback((startTime, endTime) => {
+    if (!startTime || !endTime) return 'N/A';
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const durationMs = end - start;
+    const minutes = Math.floor(durationMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${remainingMinutes}m`;
+    }
+    return `${minutes} minutes`;
+  }, []);
+
+  // Modify fetchRideDetails to always fetch when initialFetch is true
   const fetchRideDetails = useCallback(async () => {
-    // Prevent overlapping requests using ref
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
 
@@ -101,15 +264,27 @@ const RideDetailsScreen = () => {
       const passengerId = await AsyncStorage.getItem('passengerId');
       setCurrentPassengerId(passengerId);
 
-      const rideResponse = await axios.get(
-        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getById?id=${rideId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      let endpoint = `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getById?id=${routeRideId}`;
+      
+      if (rideType === 'scheduled') {
+        endpoint = `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/scheduled-rides/${routeRideId}`;
+      } else if (rideType === 'recurring') {
+        endpoint = `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/RecurringRides/${routeRideId}`;
+      }
+
+      const rideResponse = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (rideResponse.data) {
         setRideDetails(rideResponse.data);
+        
+        // Check if the ride is cancelled
+        if (rideResponse.data.status?.toUpperCase() === 'CANCELED') {
+          setRideState(RideStates.CANCELED);
+          return;
+        }
+
         const passengerData = rideResponse.data.passengers?.[0];
 
         // Check passenger status first
@@ -140,7 +315,7 @@ const RideDetailsScreen = () => {
         switch (normalizedStatus) {
           case 'COMPLETED':
             setRideState(RideStates.COMPLETED);
-            return; // Exit early to prevent further processing
+            return;
           case 'ONGOING':
             setRideState(RideStates.IN_PROGRESS);
             return;
@@ -152,27 +327,26 @@ const RideDetailsScreen = () => {
         // If not in high-priority states, check request status
         try {
           const requestsResponse = await axios.get(
-            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getRequestByRide?rideId=${rideId}`,
+            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getRequestByRide?rideId=${routeRideId}`,
             {
               headers: { Authorization: `Bearer ${token}` },
             }
           );
 
-          console.log('Request Response:', requestsResponse.data); // Debug log
+          console.log('Request Response:', requestsResponse.data);
 
           const userRequest = requestsResponse.data.find(
             (request) => request.passengerId.toString() === passengerId
           );
 
-          console.log('User Request:', userRequest); // Debug log
+          console.log('User Request:', userRequest);
 
           if (userRequest) {
-            // Use rideStateRef to get the latest rideState
             if (
               rideStateRef.current === RideStates.PENDING &&
               userRequest.status.toLowerCase() === 'pending'
             ) {
-              return; // Keep existing PENDING state without changes
+              return;
             }
 
             switch (userRequest.status.toLowerCase()) {
@@ -189,7 +363,6 @@ const RideDetailsScreen = () => {
                 setRideState(RideStates.NOT_JOINED);
             }
           } else {
-            // If no request found, set to NOT_JOINED unless already PENDING
             if (rideStateRef.current !== RideStates.PENDING) {
               setRideState(RideStates.NOT_JOINED);
             }
@@ -197,7 +370,6 @@ const RideDetailsScreen = () => {
         } catch (requestError) {
           if (requestError.response && requestError.response.status === 400) {
             console.log('No ride requests available');
-            // Only set to NOT_JOINED if not already PENDING
             if (rideStateRef.current !== RideStates.PENDING) {
               setRideState(RideStates.NOT_JOINED);
             }
@@ -206,57 +378,56 @@ const RideDetailsScreen = () => {
           }
         }
       }
-
       setError(null);
+      
     } catch (error) {
       console.error('Error fetching ride details:', error);
-      if (error.response && error.response.status !== 400) {
-        setError('Failed to fetch ride details. Please try again.');
+      if (error.response?.status === 400) {
+        setError('Unable to fetch ride details. The ride might still be processing.');
+        if (initialFetch) {
+          setTimeout(() => {
+            fetchRideDetails();
+          }, 2000);
+        }
       } else {
-        setError('Ride details not found.');
+        setError('Failed to fetch ride details. Please try again.');
       }
     } finally {
       isFetchingRef.current = false;
       setLoading(false);
     }
-  }, [rideId]); // Only depends on rideId
+  }, [routeRideId, rideType, initialFetch]);
 
   // Set up polling with useEffect
   useEffect(() => {
-    // Initial fetch
     fetchRideDetails();
 
-    // Set up interval to fetch ride details every 6 seconds
     const intervalId = setInterval(() => {
       fetchRideDetails();
-    }, 6000); // 6000 milliseconds = 6 seconds
+    }, 6000);
 
-    // Cleanup function to clear the interval when component unmounts or when rideId changes
     return () => {
       clearInterval(intervalId);
     };
-  }, [fetchRideDetails]); // Only depends on fetchRideDetails (which only depends on rideId)
+  }, [fetchRideDetails]);
 
   // useEffect for animations and EventSource setup
   useEffect(() => {
-    // Start fade-in animation
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
 
-    // If ride is accepted or driver is arriving, set up EventSource and get user location
     if (
       rideState === RideStates.ACCEPTED ||
       rideState === RideStates.DRIVER_ARRIVING
     ) {
       getUserLocation();
 
-      // Only create a new EventSource if one doesn't exist
       if (!eventSourceRef.current) {
         eventSourceRef.current = new EventSource(
-          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/sse/location/stream/last-known/${rideId}`
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/sse/location/stream/last-known/${routeRideId}`
         );
 
         eventSourceRef.current.addEventListener('LAST_KNOWN_LOCATION', (e) => {
@@ -267,12 +438,10 @@ const RideDetailsScreen = () => {
               longitude: data.longitude,
             };
 
-            // Check if driver location has actually changed
             const hasLocationChanged = !driverLocation ||
               (driverLocation.latitude !== newDriverLocation.latitude ||
                 driverLocation.longitude !== newDriverLocation.longitude);
 
-            // Only update driver location and calculate ETA if location has changed
             if (hasLocationChanged) {
               setDriverLocation(newDriverLocation);
               if (userLocation) {
@@ -293,7 +462,6 @@ const RideDetailsScreen = () => {
         });
       }
 
-      // Cleanup function to close EventSource when rideState changes
       return () => {
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
@@ -301,12 +469,11 @@ const RideDetailsScreen = () => {
         }
       };
     }
-  }, [rideState, fadeAnim, driverLocation, userLocation, rideId]); // rideState triggers this effect
+  }, [rideState, fadeAnim, driverLocation, userLocation, routeRideId]);
 
   // useEffect to calculate ETA when locations change
   useEffect(() => {
     if (userLocation && driverLocation) {
-      // Check if driver location has actually changed
       const hasLocationChanged = !previousDriverLocation ||
         (previousDriverLocation.latitude !== driverLocation.latitude ||
           previousDriverLocation.longitude !== driverLocation.longitude);
@@ -339,7 +506,7 @@ const RideDetailsScreen = () => {
 
       const locationDetails = JSON.parse(locationDetailsString);
       const payload = {
-        rideId: rideId,
+        rideId: routeRideId,
         startLocation: locationDetails.startLocation,
         startLatitude: locationDetails.startLatitude,
         startLongitude: locationDetails.startLongitude,
@@ -363,17 +530,15 @@ const RideDetailsScreen = () => {
       }
 
       const response = await axios.post(
-        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/request?passengerId=${currentPassengerId}&rideId=${rideId}`,
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/request?passengerId=${currentPassengerId}&rideId=${routeRideId}`,
         payload,
         {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
 
-      // Check if the request was successful
       if (response.data) {
         setRideState(RideStates.PENDING);
-        // Force a refresh of ride details
         await fetchRideDetails();
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -404,12 +569,13 @@ const RideDetailsScreen = () => {
       const token = await AsyncStorage.getItem('userToken');
       const passengerId = await AsyncStorage.getItem('passengerId');
 
-      const response = await axios.post(
-        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/cancelRequest?passengerId=${passengerId}&rideId=${rideId}`,
+      const response = await axios.put(
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/cancelRideByPassenger?passengerId=${passengerId}&rideId=${routeRideId}`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      console.log('Cancellation response:', response.data);
       if (response.data) {
         setRideState(RideStates.NOT_JOINED);
         setRequestStatus(null);
@@ -444,7 +610,7 @@ const RideDetailsScreen = () => {
       const response = await axios.post(
         `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/start`,
         {
-          rideId: rideId,
+          rideId: routeRideId,
           passengerId: passengerId,
           otp: otp,
         },
@@ -484,7 +650,7 @@ const RideDetailsScreen = () => {
       const response = await axios.post(
         `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/end`,
         {
-          rideId: rideId,
+          rideId: routeRideId,
           passengerId: passengerId,
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -535,8 +701,8 @@ const RideDetailsScreen = () => {
 
   const handleLocationSelect = useCallback((location) => {
     setSelectedLocation(location);
-    // You can add additional logic here if needed
   }, []);
+
   // Function to message driver
   const messageDriver = () => {
     if (
@@ -565,13 +731,10 @@ const RideDetailsScreen = () => {
       }
 
       let location = await Location.getCurrentPositionAsync({});
-      const formattedLocation = {
+      setUserLocation({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-      };
-      
-      setUserLocation(formattedLocation);
-      setFormattedPassengerPickup(formattedLocation);
+      });
     } catch (error) {
       console.error('Error getting user location:', error);
       setError('Unable to fetch your location');
@@ -598,26 +761,49 @@ const RideDetailsScreen = () => {
     }
   };
 
+  // Function to calculate available seats
+  const calculateSeatAvailability = (rideDetails) => {
+    if (!rideDetails || !rideDetails.vehicleDto) return 'N/A';
+
+    const totalCapacity = rideDetails.vehicleDto.vehicleCapacity;
+    const occupiedSeats = rideDetails.passengers?.length || 0;
+    const availableSeats = totalCapacity - occupiedSeats;
+
+    if (availableSeats <= 0) {
+      return 'No seats available';
+    }
+    return `${availableSeats} out of ${totalCapacity} available`;
+  };
+
   // Function to render the main card with ride details
   const renderMainCard = () => {
-    // Determine which location fields to use based on ride state
-    let displaySource, displayDestination;
+    let displaySource, displayDestination, displayDate, displayTime;
 
-    if (rideState === RideStates.NOT_JOINED) {
-      // Use ride's source/destination for NOT_JOINED and PENDING states
-      displaySource = rideDetails.source ? rideDetails.source.split(',')[0] : 'N/A';
-      displayDestination = rideDetails.destination ? rideDetails.destination.split(',')[0] : 'N/A';
+    if (!rideDetails) {
+      displaySource = 'N/A';
+      displayDestination = 'N/A';
+      displayDate = 'N/A';
+      displayTime = 'N/A';
     } else {
-      console.log('Ride passengers Details -->', rideDetails);
-      // Use passenger's locations for all other states
-      const passengerData = rideDetails.passengers?.[0];
-      if (passengerData) {
-        displaySource = passengerData.startLocation || 'N/A';
-        displayDestination = passengerData.endLocation || 'N/A';
+      if (rideState === RideStates.NOT_JOINED) {
+        displaySource = rideDetails.source ? rideDetails.source.split(',')[0] : 'N/A';
+        displayDestination = rideDetails.destination ? rideDetails.destination.split(',')[0] : 'N/A';
       } else {
-        displaySource = 'N/A';
-        displayDestination = 'N/A';
+        const passengerData = rideDetails.passengers?.find(p => p.passengerId.toString() === currentPassengerId);
+        
+        displaySource = passengerData?.startLocation || rideDetails.source?.split(',')[0] || 'N/A';
+        displayDestination = passengerData?.endLocation || rideDetails.destination?.split(',')[0] || 'N/A';
       }
+
+      displayDate = rideDetails.rideDate
+        ? new Date(rideDetails.rideDate).toLocaleDateString()
+        : 'N/A';
+      displayTime = rideDetails.pickupTime
+        ? new Date(rideDetails.pickupTime).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
+        : 'N/A';
     }
 
     return (
@@ -664,9 +850,7 @@ const RideDetailsScreen = () => {
               DATE
             </Text>
             <Text color="white" fontSize="md" fontWeight="semibold">
-              {rideDetails.rideDate
-                ? new Date(rideDetails.rideDate).toLocaleDateString()
-                : 'N/A'}
+              {displayDate}
             </Text>
           </VStack>
           <VStack>
@@ -674,9 +858,7 @@ const RideDetailsScreen = () => {
               PICKUP
             </Text>
             <Text color="white" fontSize="md" fontWeight="semibold">
-              {rideDetails.pickupTime
-                ? new Date(rideDetails.pickupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'N/A'}
+              {displayTime}
             </Text>
           </VStack>
           <VStack>
@@ -702,118 +884,301 @@ const RideDetailsScreen = () => {
 
   // Function to render the driver information card
   const renderDriverCard = () => (
-    <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
-      <HStack alignItems="center" space="4">
-        <Avatar
-          size="lg"
-          source={{
-            uri: rideDetails.vehicleDto?.driverProfilePicture || 'https://randomuser.me/api/portraits/men/32.jpg',
-          }}
-        >
-          {rideDetails.vehicleDto?.driverFirstName?.charAt(0) || 'D'}
-        </Avatar>
-        <VStack>
-          <Text fontSize="lg" fontWeight="bold" color="black">
-            {rideDetails.vehicleDto?.driverFirstName || 'Driver'}{' '}
-            {rideDetails.vehicleDto?.driverLastName || ''}
+    <Box 
+      bg="white" 
+      rounded="2xl" 
+      p="6" 
+      shadow="2" 
+      mb="4"
+    >
+      {/* Driver Profile Section */}
+      <HStack alignItems="center" space="4" mb="6">
+        <Box>
+          <Avatar
+            size="lg"
+            source={{
+              uri: rideDetails.vehicleDto?.driverProfilePicture ||
+                   'https://randomuser.me/api/portraits/men/32.jpg',
+            }}
+            borderWidth={2}
+            borderColor="black"
+          >
+            {rideDetails.vehicleDto?.riderFirstName?.charAt(0) || 'D'}
+          </Avatar>
+          <Box 
+            position="absolute" 
+            bottom={0} 
+            right={0}
+            bg="green.500" 
+            w="4" 
+            h="4" 
+            rounded="full" 
+            borderWidth={2} 
+            borderColor="white"
+          />
+        </Box>
+        
+        <VStack flex={1}>
+          <Text fontSize="xl" fontWeight="bold" color="gray.800">
+            {rideDetails.vehicleDto?.riderFirstName || 'Driver'}{' '}
+            {rideDetails.vehicleDto?.riderLastName || ''}
           </Text>
-          <HStack alignItems="center">
-            <Icon as={Ionicons} name="star" size="sm" color="yellow.400" />
-            <Text fontSize="md" color="coolGray.600" ml="1">
-              {rideDetails.rating ? rideDetails.rating.toFixed(1) : 'N/A'} (120 rides)
+          <HStack alignItems="center" space={1}>
+            <Icon as={Ionicons} name="star" size="sm" color="yellow.500" />
+            <Text fontSize="md" color="gray.600" fontWeight="medium">
+              {calculateAverageRating(reviews)}
+            </Text>
+            <Text fontSize="sm" color="gray.400">
+              ({reviews.length} reviews)
             </Text>
           </HStack>
         </VStack>
       </HStack>
-      <VStack mt="4" space="2">
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.400">
-            VEHICLE
-          </Text>
-          <Text fontSize="sm" fontWeight="medium" color="black">
-            {rideDetails.vehicleDto?.vehicleModel || 'N/A'}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.400">
-            PLATE NUMBER
-          </Text>
-          <Text fontSize="sm" fontWeight="medium" color="black">
-            {rideDetails.vehicleDto?.vehicleNumber || 'N/A'}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.400">
-            COLOR
-          </Text>
-          <Text fontSize="sm" fontWeight="medium" color="black">
-            {rideDetails.vehicleDto?.vehicleColor || 'N/A'}
-          </Text>
-        </HStack>
-        <HStack justifyContent="space-between">
-          <Text fontSize="sm" color="gray.400">
-            SEATS
-          </Text>
-          <Text fontSize="sm" fontWeight="medium" color="black">
-            {rideDetails.availableSeats != null ? `${rideDetails.availableSeats} Available` : 'N/A'}
-          </Text>
-        </HStack>
-      </VStack>
+
+      {/* Vehicle Details Section */}
+      <Box 
+        bg="gray.50" 
+        p="4" 
+        rounded="xl" 
+        mb="6"
+        borderWidth={1}
+        borderColor="gray.100"
+      >
+        <Text fontSize="sm" fontWeight="semibold" color="gray.500" mb="3">
+          VEHICLE DETAILS
+        </Text>
+        <VStack space="4">
+          <HStack alignItems="center" space="3">
+            <Icon as={Ionicons} name="car-outline" size="md" color="gray.400" />
+            <VStack flex={1}>
+              <Text fontSize="xs" color="gray.400">MODEL</Text>
+              <Text fontSize="md" fontWeight="semibold" color="gray.800">
+                {rideDetails.vehicleDto?.model || 'N/A'}
+              </Text>
+            </VStack>
+            <VStack>
+              <Text fontSize="xs" color="gray.400">PLATE</Text>
+              <Text fontSize="md" fontWeight="semibold" color="gray.800">
+                {rideDetails.vehicleDto?.vehicleNumber || 'N/A'}
+              </Text>
+            </VStack>
+          </HStack>
+          
+          <HStack alignItems="center" space="3">
+            <Icon as={Ionicons} name="color-palette-outline" size="md" color="gray.400" />
+            <VStack flex={1}>
+              <Text fontSize="xs" color="gray.400">COLOR</Text>
+              <Text fontSize="md" fontWeight="semibold" color="gray.800">
+                {rideDetails.vehicleDto?.color || 'N/A'}
+              </Text>
+            </VStack>
+            <VStack>
+              <Text fontSize="xs" color="gray.400">SEATS</Text>
+              <Text fontSize="md" fontWeight="semibold" color="gray.800">
+                {calculateSeatAvailability(rideDetails)}
+              </Text>
+            </VStack>
+          </HStack>
+        </VStack>
+      </Box>
+
+      {/* Contact Section */}
+      <Box>
+        <Text fontSize="sm" fontWeight="semibold" color="gray.500" mb="3">
+          CONTACT INFORMATION
+        </Text>
+        <VStack space="3">
+          <Pressable
+            onPress={() => Linking.openURL(`tel:${rideDetails.driverDetails?.driverPhone}`)}
+            flexDirection="row"
+            alignItems="center"
+            bg="gray.50"
+            p="3"
+            rounded="lg"
+            borderWidth={1}
+            borderColor="gray.100"
+          >
+            <Icon as={Ionicons} name="call-outline" size="md" color="black" mr="3" />
+            <Text flex={1} fontSize="md" color="gray.700">
+              {rideDetails.driverDetails?.driverPhone || 'N/A'}
+            </Text>
+            <Icon as={Ionicons} name="chevron-forward" size="sm" color="gray.400" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => Linking.openURL(`mailto:${rideDetails.driverDetails?.email}`)}
+            flexDirection="row"
+            alignItems="center"
+            bg="gray.50"
+            p="3"
+            rounded="lg"
+            borderWidth={1}
+            borderColor="gray.100"
+          >
+            <Icon as={Ionicons} name="mail-outline" size="md" color="black" mr="3" />
+            <Text flex={1} fontSize="md" color="gray.700">
+              {rideDetails.driverDetails?.email || 'N/A'}
+            </Text>
+            <Icon as={Ionicons} name="chevron-forward" size="sm" color="gray.400" />
+          </Pressable>
+
+          <Button
+            mt="2"
+            size="md"
+            bg="black"
+            _pressed={{ bg: "blue.600" }}
+            rounded="full"
+            leftIcon={<Icon as={Ionicons} name="chatbubble-outline" size="sm" color="white" />}
+            _text={{ color: 'white', fontWeight: 'bold' }}
+            onPress={messageDriver}
+          >
+            Message Driver
+          </Button>
+        </VStack>
+      </Box>
     </Box>
   );
 
+  // Function to cancel ride as passenger
+  const cancelRideAsPassenger = async () => {
+    try {
+      setLoading(true);
+      const token = await AsyncStorage.getItem('userToken');
+      const passengerId = await AsyncStorage.getItem('passengerId');
+
+      const response = await axios.put(
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/cancelRideByPassenger?passengerId=${passengerId}&rideId=${routeRideId}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data) {
+        setRideState(RideStates.CANCELED);
+        
+        setRideDetails(prevDetails => ({
+          ...prevDetails,
+          status: 'CANCELED'
+        }));
+
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        toast.show({
+          title: 'Ride Cancelled',
+          status: 'success',
+          description: 'Your ride has been cancelled successfully.',
+          placement: 'top',
+        });
+
+        await fetchRideDetails();
+      }
+    } catch (error) {
+      console.error('Error cancelling ride:', error);
+      toast.show({
+        title: 'Failed to Cancel Ride',
+        status: 'error',
+        description: error.response?.data?.message || 'Please try again later.',
+        placement: 'top',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Function to render the action card based on rideState
   const renderActionCard = () => {
+    console.log('Current ride state:', rideState);
+    if (viewType === 'driver') {
+      return (
+        <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+          <HStack alignItems="center" mb="4">
+            <Icon
+              as={MaterialIcons}
+              name="local-taxi"
+              size="6"
+              color="black"
+              mr="2"
+            />
+            <Text fontSize="lg" fontWeight="bold" color="black">
+              Ride Posted Successfully
+            </Text>
+          </HStack>
+          <Text fontSize="sm" color="gray.600" mb="4">
+            Your ride has been posted. You'll be notified when passengers request to join.
+          </Text>
+          <VStack space={4}>
+          <Button
+            onPress={() => {
+              console.log('Navigating to ManageRide:', { routeRideId, isDriver });
+              navigation.navigate('ManageRide', { ride: rideDetails });
+            }}
+            bg="black"
+            _text={{ color: 'white', fontWeight: 'bold' }}
+            rounded="full"
+          >
+            Manage Ride
+          </Button>
+
+            <Button
+              onPress={() => navigation.replace('RideHistory', {
+                initialTab: 1 
+              })}
+              variant="outline"
+              _text={{ color: 'black' }}
+              rounded="full"
+            >
+              View All Rides
+            </Button>
+          </VStack>
+        </Box>
+      );
+    }
+
     switch (rideState) {
+      case RideStates.CANCELED:
+        return (
+          <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+            <HStack alignItems="center" mb="4">
+              <Icon as={Feather} name="x-circle" size="6" color="red.600" mr="2" />
+              <Text fontSize="lg" fontWeight="bold" color="black">
+                Ride Cancelled
+              </Text>
+            </HStack>
+            <Text fontSize="sm" color="gray.600" mb="4">
+              You have successfully cancelled this ride. We hope to see you book another ride soon!
+            </Text>
+            <Box bg="gray.100" p="4" rounded="lg" mb="4">
+              <Text fontSize="sm" color="gray.600">
+                Cancellation Details:
+              </Text>
+              <Text fontSize="sm" fontWeight="medium" mt="2">
+                • Cancelled on: {new Date().toLocaleDateString()}
+              </Text>
+              <Text fontSize="sm" fontWeight="medium">
+                • Ride ID: {routeRideId}
+              </Text>
+            </Box>
+            <Button
+              onPress={() => navigation.navigate('FindRide')}
+              bg="black"
+              _text={{ color: 'white', fontWeight: 'bold' }}
+              rounded="full"
+            >
+              Find New Ride
+            </Button>
+          </Box>
+        );
       case RideStates.NOT_JOINED:
         return (
           <Animated.View style={{ opacity: fadeAnim }}>
             <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
               <HStack alignItems="center" mb="4">
-                <Icon as={Feather} name="map-pin" size="6" color="green.500" mr="2" />
+                <Icon as={Feather} name="zap" size="6" color="green.500" mr="2" />
                 <Text fontSize="lg" fontWeight="bold" color="black">
-                  Passenger Location Details
+                  Eco-Friendly Ride
                 </Text>
               </HStack>
-
-              {/* Distance and Location Info */}
-              <Box bg="gray.100" p="4" rounded="lg" mb="4">
-                <VStack space="3">
-                  <HStack justifyContent="space-between">
-                    <Text fontSize="sm" color="gray.600">Distance to Passenger</Text>
-                    <Text fontSize="sm" fontWeight="bold">
-                      {routeDetails.distance ? `${(routeDetails.distance / 1000).toFixed(1)} km` : 'Calculating...'}
-                    </Text>
-                  </HStack>
-                  <HStack justifyContent="space-between">
-                    <Text fontSize="sm" color="gray.600">Estimated Duration</Text>
-                    <Text fontSize="sm" fontWeight="bold">
-                      {routeDetails.duration ? `${Math.round(routeDetails.duration / 60)} mins` : 'Calculating...'}
-                    </Text>
-                  </HStack>
-                </VStack>
-              </Box>
-
-              {/* Map showing passenger location */}
-              <Box bg="white" rounded="lg" shadow={2} p="4" mb="4" h={200}>
-                <MapScreen
-                  driverLocation={driverLocation}
-                  passengerPickupLocation={formattedPassengerPickup}
-                  passengerDropLocation={formattedPassengerDrop}
-                  rideState={rideState}
-                  ride={rideDetails}
-                  hideNavigationButton={true}
-                  source={rideDetails?.source}
-                  destination={rideDetails?.destination}
-                  shouldFetchRoute={true}
-                  onLocationSelect={handleLocationSelect}
-                />
-              </Box>
-
               <Text fontSize="md" color="gray.600" mb="4">
                 Join this ride to save 2.5 kg of CO2
               </Text>
-              
               <Button
                 onPress={joinRide}
                 isLoading={joiningRide}
@@ -865,51 +1230,57 @@ const RideDetailsScreen = () => {
         );
       case RideStates.ACCEPTED:
         return (
-          <Animated.View style={{ opacity: fadeAnim }}>
-            <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
-              <HStack alignItems="center" mb="4">
-                <Icon
-                  as={MaterialIcons}
-                  name="check-circle"
-                  size="6"
-                  color="green.600"
-                  mr="2"
-                />
-                <Text fontSize="lg" fontWeight="bold" color="black">
-                  Ride Accepted!
-                </Text>
-              </HStack>
-              <Text fontSize="sm" color="gray.600" mb="4">
-                Great news! Your ride request has been accepted. The driver will pick you up at your selected location.
+          <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+            <HStack alignItems="center" mb="4">
+              <Icon
+                as={MaterialIcons}
+                name="check-circle"
+                size="6"
+                color="green.600"
+                mr="2"
+              />
+              <Text fontSize="lg" fontWeight="bold" color="black">
+                Ride Accepted!
               </Text>
-              <Progress value={33} colorScheme="yellow" mb="4" />
-              <Text fontSize="xs" color="gray.500" textAlign="center" mb="4">
-                Ride will start soon
-              </Text>
-              <HStack space="4">
-                <Button
-                  onPress={callDriver}
-                  leftIcon={<Icon as={Ionicons} name="call" size="sm" color="white" />}
-                  bg="black"
-                  _text={{ color: 'white' }}
-                  rounded="full"
-                  flex={1}
-                >
-                  Call Driver
-                </Button>
-                <Button
-                  onPress={messageDriver}
-                  leftIcon={<Icon as={Ionicons} name="chatbubble" size="sm" color="black" />}
-                  bg="coolGray.100"
-                  _text={{ color: 'black' }}
-                  rounded="full"
-                  flex={1}
-                >
-                  Message
-                </Button>
-              </HStack>
-            </Box>
-          </Animated.View>
+            </HStack>
+            <Text fontSize="sm" color="gray.600" mb="4">
+              Great news! Your ride request has been accepted. The driver will pick you up at your selected location.
+            </Text>
+            <Progress value={33} colorScheme="yellow" mb="4" />
+            <Text fontSize="xs" color="gray.500" textAlign="center" mb="4">
+              Ride will start soon
+            </Text>
+            <VStack space={4}>
+              <Button
+                onPress={cancelRideAsPassenger}
+                bg="red.600"
+                _text={{ color: 'white', fontWeight: 'bold' }}
+                rounded="full"
+              >
+                Cancel Ride
+              </Button>
+              <Button
+                onPress={callDriver}
+                leftIcon={<Icon as={Ionicons} name="call" size="sm" color="white" />}
+                bg="black"
+                _text={{ color: 'white' }}
+                rounded="full"
+                flex={1}
+              >
+                Call Driver
+              </Button>
+              <Button
+                onPress={messageDriver}
+                leftIcon={<Icon as={Ionicons} name="chatbubble" size="sm" color="black" />}
+                bg="coolGray.100"
+                _text={{ color: 'black' }}
+                rounded="full"
+                flex={1}
+              >
+                Message
+              </Button>
+            </VStack>
+          </Box>
         );
       case RideStates.DRIVER_ARRIVING:
         return (
@@ -979,62 +1350,6 @@ const RideDetailsScreen = () => {
                   Message
                 </Button>
               </HStack>
-              <Box bg="white" rounded="lg" shadow={2} p="4" mb="4" h={300}>
-                <MapScreen
-                  driverLocation={driverLocation}
-                  passengerPickupLocation={formattedPassengerPickup}
-                  passengerDropLocation={formattedPassengerDrop}
-                  acceptedPassengers={acceptedPassengers}
-                  rideState={rideState}
-                  ride={rideDetails}
-                  hideNavigationButton={true}
-                  source={rideDetails?.source}
-                  destination={rideDetails?.destination}
-                  shouldFetchRoute={true}
-                  onLocationSelect={handleLocationSelect}
-                />
-              </Box>
-            </Box>
-          </Animated.View>
-        );
-      case RideStates.REJECTED:
-        return (
-          <Animated.View style={{ opacity: fadeAnim }}>
-            <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
-              <HStack alignItems="center" mb="4">
-                <Icon as={Feather} name="x-circle" size="6" color="red.600" mr="2" />
-                <Text fontSize="lg" fontWeight="bold" color="black">
-                  Request Rejected
-                </Text>
-              </HStack>
-              <Text fontSize="sm" color="gray.600" mb="4">
-                We're sorry, but the driver couldn't accommodate your request this
-                time. Don't worry, there are plenty of other rides available!
-              </Text>
-              <Box bg="gray.100" p="3" rounded="md" mb="4">
-                <Text fontSize="sm" fontWeight="semibold" mb="2">
-                  Why was my request rejected?
-                </Text>
-                <VStack space="1">
-                  <Text fontSize="sm" color="gray.600">
-                    • The driver's route may have changed
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">
-                    • The available seats might have been filled
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">
-                    • There could be a timing conflict
-                  </Text>
-                </VStack>
-              </Box>
-              <Button
-                onPress={() => navigation.navigate('FindRide')}
-                bg="black"
-                _text={{ color: 'white', fontWeight: 'bold' }}
-                rounded="full"
-              >
-                Find Another Ride
-              </Button>
             </Box>
           </Animated.View>
         );
@@ -1077,12 +1392,20 @@ const RideDetailsScreen = () => {
                   shouldFetchRoute={true}
                   onLocationSelect={handleLocationSelect}
                 />
-                
               </Box>
             </Box>
           </Animated.View>
         );
       case RideStates.COMPLETED:
+        const startCoords = {
+          latitude: ride.sourceLatitude,
+          longitude: ride.sourceLongitude,
+        };
+        const endCoords = {
+          latitude: ride.destinationLatitude,
+          longitude: ride.destinationLongitude,
+        };
+        const totalDistance = calculateDistance(startCoords, endCoords).toFixed(2);
         return (
           <Animated.View style={{ opacity: fadeAnim }}>
             <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
@@ -1096,6 +1419,7 @@ const RideDetailsScreen = () => {
                 Thanks for riding with us! We hope you had a great experience. Your
                 feedback helps us improve our service.
               </Text>
+              
               <Box bg="gray.100" p="3" rounded="md" mb="4">
                 <Text fontSize="sm" fontWeight="semibold" mb="2">
                   Ride Summary
@@ -1106,7 +1430,7 @@ const RideDetailsScreen = () => {
                       Distance
                     </Text>
                     <Text fontSize="sm" fontWeight="semibold">
-                      {rideDetails.distance != null ? `${rideDetails.distance} km` : 'N/A'}
+                      {totalDistance}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
@@ -1114,7 +1438,7 @@ const RideDetailsScreen = () => {
                       Duration
                     </Text>
                     <Text fontSize="sm" fontWeight="semibold">
-                      {rideDetails.duration != null ? `${rideDetails.duration} mins` : 'N/A'}
+                      {calculateDuration(ride.rideStartTime, ride.rideEndTime)}
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
@@ -1122,7 +1446,7 @@ const RideDetailsScreen = () => {
                       Cost
                     </Text>
                     <Text fontSize="sm" fontWeight="semibold">
-                      {rideDetails.cost != null ? `$${rideDetails.cost}` : 'N/A'}
+                      {rideDetails.cost != null ? `$${rideDetails.price}` : 'N/A'}
                     </Text>
                   </HStack>
                 </VStack>
@@ -1178,10 +1502,8 @@ const RideDetailsScreen = () => {
 
   // Add cleanup for location subscription
   useEffect(() => {
-    // Start location updates when component mounts
     startLocationUpdates();
 
-    // Cleanup function
     return () => {
       if (locationSubscription) {
         locationSubscription.remove();
@@ -1189,38 +1511,27 @@ const RideDetailsScreen = () => {
     };
   }, [startLocationUpdates]);
 
-  // Add this function near the other utility functions
-  const calculateRouteDetails = async (driverLoc, passengerLoc) => {
-    if (!driverLoc || !passengerLoc) return;
-    
-    try {
-      const response = await axios.get(
-        `https://router.hereapi.com/v8/routes?transportMode=car&origin=${driverLoc.latitude},${driverLoc.longitude}&destination=${passengerLoc.latitude},${passengerLoc.longitude}&return=summary&apiKey=${HERE_API_KEY}`
-      );
-      
-      if (response.data.routes && response.data.routes[0]) {
-        const summary = response.data.routes[0].sections[0].summary;
-        setRouteDetails({
-          distance: summary.length, // in meters
-          duration: summary.duration // in seconds
-        });
+  // Add new useEffect to fetch reviews
+  useEffect(() => {
+    const fetchDriverReviews = async () => {
+      try {
+        if (rideDetails?.vehicleDto?.driverId) {
+          const token = await AsyncStorage.getItem('userToken');
+          const response = await axios.get(
+            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/review/getByDriver?driverId=${rideDetails.vehicleDto.driverId}`,
+            {
+              headers: { Authorization: `Bearer ${token}` }
+            }
+          );
+          setReviews(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching driver reviews:', error);
       }
-    } catch (error) {
-      console.error('Error calculating route details:', error);
-    }
-  };
+    };
 
-  // Add this useEffect to trigger route calculation
-  useEffect(() => {
-    if (driverLocation && userLocation && rideState === RideStates.NOT_JOINED) {
-      calculateRouteDetails(driverLocation, userLocation);
-    }
-  }, [driverLocation, userLocation, rideState]);
-
-  // Call getUserLocation when component mounts
-  useEffect(() => {
-    getUserLocation();
-  }, []);
+    fetchDriverReviews();
+  }, [rideDetails?.vehicleDto?.driverId]);
 
   // Render loading indicator
   if (loading) {

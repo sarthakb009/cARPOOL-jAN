@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
-import { ScrollView, Alert } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { ScrollView, Animated } from 'react-native';
+import { Box, Heading, VStack, FormControl, Input, Button as ChakraButton, Text, HStack, Icon, Center,Pressable, Select, CheckIcon } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Box, Heading, VStack, FormControl, Input, Button as ChakraButton, Text, HStack, Icon } from 'native-base';
-
-
 
 const RegisterScreen = ({ navigation }) => {
   const [username, setUsername] = useState('');
@@ -13,16 +11,42 @@ const RegisterScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showError, setShowError] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(100)).current;
+  const [errorMessage, setErrorMessage] = useState('');
+  const [country, setCountry] = useState('');
+
+  const countries = [
+    { code: 'AU', name: 'Australia' },
+    { code: 'IN', name: 'India' },
+    { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'CA', name: 'Canada' },
+    // Add more countries as needed
+  ];
 
   const handleRegister = async () => {
+    if (phone.length !== 10) {
+      showErrorMessage("Please enter a valid 10-digit phone number");
+      return;
+    }
+
+    if (!country) {
+      showErrorMessage("Please select your country");
+      return;
+    }
+
     setLoading(true);
     try {
-      // Create the user
+      // Create the user with country
       await axios.post('http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/user/manage/create', {
         username,
         password,
         email,
         phone,
+        country,
       });
   
       // Login to get the token and user ID
@@ -37,33 +61,50 @@ const RegisterScreen = ({ navigation }) => {
       await AsyncStorage.setItem('userId', userId);
       await AsyncStorage.setItem('username', username);
   
-      // Navigate to onboarding
-      navigation.replace('Onboarding', { username });
+      // Pass both username and email to Onboarding
+      navigation.replace('Onboarding', { username, email });
     } catch (error) {
       console.error('Registration error:', error);
-      if (error.response && error.response.data === 'User with email already exists as a passenger!') {
-        Toast.show({
-          title: "Registration Failed",
-          description: "This email is already registered. Please use a different email or try logging in.",
-          status: "error",
-          duration: 5000,
-          isClosable: true,
-        });
-      } else {
-        Toast.show({
-          title: "Registration Error",
-          description: "Something went wrong during registration. Please try again.",
-          status: "error",
-          duration: 5000,
-          isClosable: true,
-        });
-      }
+      showErrorMessage(error?.response?.data?.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const showErrorMessage = (message) => {
+    setErrorMessage(message);
+    setShowError(true);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
+    setTimeout(() => hideErrorMessage(), 5000);
+  };
+
+  const hideErrorMessage = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 100,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowError(false));
+  };
 
   return (
     <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>
@@ -123,8 +164,36 @@ const RegisterScreen = ({ navigation }) => {
             />
           </FormControl>
           <FormControl>
+            <Select
+              selectedValue={country}
+              minWidth="200"
+              accessibilityLabel="Choose Country"
+              placeholder="Select Your Country"
+              _selectedItem={{
+                bg: "coolGray.100",
+                endIcon: <CheckIcon size="5" color="black" />
+              }}
+              bg="white"
+              borderRadius="md"
+              borderColor="coolGray.300"
+              px="4"
+              py="3"
+              _hover={{ bg: "coolGray.100" }}
+              _focus={{ bg: "coolGray.100" }}
+              onValueChange={itemValue => setCountry(itemValue)}
+            >
+              {countries.map((country) => (
+                <Select.Item 
+                  key={country.code} 
+                  label={country.name} 
+                  value={country.name}
+                />
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl>
             <Input
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChangeText={setPassword}
               placeholder="Password"
@@ -135,7 +204,16 @@ const RegisterScreen = ({ navigation }) => {
               py="3"
               _hover={{ bg: "coolGray.100" }}
               _focus={{ bg: "coolGray.100" }}
-              secureTextEntry
+              InputRightElement={
+                <Pressable onPress={() => setShowPassword(!showPassword)} mr="3">
+                  <Icon
+                    as={Ionicons}
+                    name={showPassword ? "eye-outline" : "eye-off-outline"}
+                    size="sm"
+                    color="coolGray.500"
+                  />
+                </Pressable>
+              }
             />
           </FormControl>
           <Text textAlign="center" color="coolGray.500" mb="4">
@@ -170,6 +248,39 @@ const RegisterScreen = ({ navigation }) => {
           </Text>
         </VStack>
       </Box>
+      {showError && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            bottom: 20,
+            left: 20,
+            right: 20,
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          }}
+        >
+          <Box bg="red.500"
+            p="4"
+            rounded="2xl"
+            flexDirection="row"
+            alignItems="center"
+            shadow={5}
+          >
+            <Center w="60px" h="60px" mr="4">
+              <Text fontSize="4xl">😕</Text>
+            </Center>
+            <VStack flex={1}>
+              <Text color="white" fontWeight="bold" fontSize="lg">
+                Registration Failed
+              </Text>
+              <Text color="white" fontSize="sm">
+                {errorMessage || "An unexpected error occurred. Please try again."}
+              </Text>
+            </VStack>
+            <Icon as={Ionicons} name="close-circle-outline" size="sm" color="white" onPress={hideErrorMessage} />
+          </Box>
+        </Animated.View>
+      )}
     </ScrollView>
   );
 };

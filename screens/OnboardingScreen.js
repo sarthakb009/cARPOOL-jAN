@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Dimensions, Animated, Platform, Image } from 'react-native';
-import { Text, Input, Button, VStack, HStack, Pressable, ScrollView, Box, Icon, useToast } from 'native-base';
-import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Text, Input, Button, VStack, HStack, Pressable, ScrollView, Box, Icon, useToast, Center } from 'native-base';
+import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -10,8 +10,19 @@ import ScrollableDatePickerModal from './ScrollableDatePickerModal';
 
 const { width } = Dimensions.get('window');
 
+const calculateAge = (birthDate) => {
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
 const OnboardingScreen = ({ route, navigation }) => {
-  const { username } = route.params || {};
+  const { username, email } = route.params || {};
   const [step, setStep] = useState(1);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -23,6 +34,10 @@ const OnboardingScreen = ({ route, navigation }) => {
   const [passengerId, setPassengerId] = useState('');
   const [driverId, setDriverId] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAgeError, setShowAgeError] = useState(false);
+  const [ageErrorMessage, setAgeErrorMessage] = useState('');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(100)).current;
 
   const [animation] = useState(new Animated.Value(0));
 
@@ -70,7 +85,49 @@ const OnboardingScreen = ({ route, navigation }) => {
     }).start();
   }, [step]);
 
+  const showErrorAnimation = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const hideErrorAnimation = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 100,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowAgeError(false));
+  };
+
   const handleNext = () => {
+    if (step === 2) {
+      const age = calculateAge(dateOfBirth);
+      if (age < 14) {
+        setAgeErrorMessage("You must be at least 14 years old to use the app");
+        setShowAgeError(true);
+        showErrorAnimation();
+        setTimeout(() => hideErrorAnimation(), 5000);
+        return;
+      }
+      AsyncStorage.setItem('userAge', age.toString());
+    }
     if (step < 3) setStep(step + 1);
   };
 
@@ -84,7 +141,7 @@ const OnboardingScreen = ({ route, navigation }) => {
       const customerPayload = {
         firstName,
         lastName,
-        email: username,
+        email,
         type: 'passenger',
         dateOfBirth: dateOfBirth.toISOString().split('T')[0],
         gender
@@ -97,7 +154,7 @@ const OnboardingScreen = ({ route, navigation }) => {
       const driverPayload = {
         driverFirstName: firstName,
         driverLastName: lastName,
-        email: username,
+        email,
         dateOfBirth: dateOfBirth.toISOString().split('T')[0],
         gender
       };
@@ -120,69 +177,134 @@ const OnboardingScreen = ({ route, navigation }) => {
   });
 
   const renderStepIndicator = () => (
-    <HStack space={2} justifyContent="center" my={4}>
+    <HStack space={4} justifyContent="center" mb={6} mt={2}>
       {[1, 2, 3].map((s) => (
-        <Box
+        <Pressable
           key={s}
-          w={2}
-          h={2}
-          rounded="full"
-          bg={s === step ? "black" : "gray.300"}
-        />
+          onPress={() => s < step && setStep(s)}
+          opacity={s <= step ? 1 : 0.5}
+        >
+          <VStack alignItems="center" space={2}>
+            <Box
+              w="12"
+              h="12"
+              rounded="full"
+              bg={s === step ? "black" : "white"}
+              borderWidth={2}
+              borderColor={s <= step ? "black" : "gray.300"}
+              justifyContent="center"
+              alignItems="center"
+              shadow={s === step ? "2" : "none"}
+            >
+              <Icon 
+                as={MaterialIcons} 
+                name={s === 1 ? "person" : s === 2 ? "cake" : "wc"}
+                size="md"
+                color={s === step ? "white" : s <= step ? "black" : "gray.400"}
+              />
+            </Box>
+            <Text
+              color={s === step ? "black" : "gray.500"}
+              fontWeight={s === step ? "bold" : "normal"}
+              fontSize="xs"
+              textTransform="uppercase"
+              letterSpacing="lg"
+            >
+              {s === 1 ? "Profile" : s === 2 ? "Birthday" : "Gender"}
+            </Text>
+            {s < 3 && (
+              <Box
+                h="0.5"
+                w="16"
+                bg={s < step ? "black" : "gray.200"}
+                position="absolute"
+                right="-14"
+                top="6"
+                zIndex="-1"
+              />
+            )}
+          </VStack>
+        </Pressable>
       ))}
     </HStack>
   );
 
+  const stepLabels = ["Personal Info", "Birthday", "Gender"];
+
   const renderStepContent = () => (
     <Animated.View style={[styles.stepsContainer, { transform: [{ translateX }] }]}>
       <ScrollView contentContainerStyle={styles.step}>
-        <VStack space={6} width="100%" alignItems="center">
-          <Icon as={FontAwesome5} name="user-circle" size={20} color="black" />
-          <Text fontSize="3xl" fontWeight="bold" color="black">
-            What's your name?
-          </Text>
-          <Input
-            placeholder="First Name"
-            value={firstName}
-            onChangeText={setFirstName}
-            fontSize="xl"
-            width="100%"
-            borderColor="gray.300"
-            _focus={{ borderColor: "black" }}
-          />
-          <Input
-            placeholder="Last Name"
-            value={lastName}
-            onChangeText={setLastName}
-            fontSize="xl"
-            width="100%"
-            borderColor="gray.300"
-            _focus={{ borderColor: "black" }}
-          />
+        <VStack space={8} width="100%" alignItems="center">
+          <Box alignItems="center" space={2}>
+            <Icon as={FontAwesome5} name="user-circle" size={16} color="black" mb={4} />
+            <Text fontSize="3xl" fontWeight="bold" color="black" textAlign="center">
+              What's your name?
+            </Text>
+            <Text fontSize="md" color="gray.500" textAlign="center" mt={2} mb={6}>
+              Let us know how to address you
+            </Text>
+          </Box>
+          <VStack space={4} width="100%">
+            <Input
+              placeholder="First Name"
+              value={firstName}
+              onChangeText={setFirstName}
+              fontSize="lg"
+              width="100%"
+              borderColor="gray.300"
+              _focus={{ borderColor: "black", backgroundColor: "gray.50" }}
+              p={4}
+              rounded="xl"
+            />
+            <Input
+              placeholder="Last Name"
+              value={lastName}
+              onChangeText={setLastName}
+              fontSize="lg"
+              width="100%"
+              borderColor="gray.300"
+              _focus={{ borderColor: "black", backgroundColor: "gray.50" }}
+              p={4}
+              rounded="xl"
+            />
+          </VStack>
         </VStack>
       </ScrollView>
 
       <ScrollView contentContainerStyle={styles.step}>
         <VStack space={6} width="100%" alignItems="center">
-          <Text fontSize="3xl" fontWeight="bold" color="black">
-            When's your birthday?
-          </Text>
+          <Box alignItems="center" space={2}>
+            <Text fontSize="3xl" fontWeight="bold" color="black" textAlign="center">
+              When's your birthday?
+            </Text>
+            <Text fontSize="md" color="gray.500" textAlign="center" mt={2} mb={4}>
+              We'll send you something special
+            </Text>
+          </Box>
           <Image source={birthdayImage} style={styles.birthdayImage} />
-          <Pressable onPress={() => setShowDatePicker(true)}>
-            <HStack
-              alignItems="center"
+          <Pressable 
+            onPress={() => setShowDatePicker(true)}
+            width="100%"
+          >
+            <Box
               borderWidth={1}
               borderColor="gray.300"
-              rounded="lg"
-              px={4}
-              py={3}
-              space={2}
+              rounded="xl"
+              p={4}
+              bg="white"
+              shadow={1}
             >
-              <Icon as={MaterialIcons} name="event" size={6} color="black" />
-              <Text fontSize="lg" color="black">
-                {dateOfBirth.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </Text>
-            </HStack>
+              <HStack alignItems="center" space={3}>
+                <Icon as={MaterialIcons} name="event" size={6} color="black" />
+                <Text fontSize="lg" color="black">
+                  {dateOfBirth.toLocaleDateString('en-US', { 
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </Text>
+              </HStack>
+            </Box>
           </Pressable>
           <ScrollableDatePickerModal
             isOpen={showDatePicker}
@@ -198,34 +320,42 @@ const OnboardingScreen = ({ route, navigation }) => {
 
       <ScrollView contentContainerStyle={styles.step}>
         <VStack space={6} width="100%" alignItems="center">
-          <Icon as={FontAwesome5} name="venus-mars" size={20} color="black" />
-          <Text fontSize="3xl" fontWeight="bold" color="black">
-            How do you identify?
-          </Text>
-          {['Male', 'Female', 'Other', 'Prefer not to say'].map((option) => (
-            <Pressable
-              key={option}
-              onPress={() => setGender(option.toLowerCase())}
-              width="100%"
-            >
-              <Box
-                bg={gender.toLowerCase() === option.toLowerCase() ? "black" : "white"}
-                borderColor="black"
-                borderWidth={1}
-                p={4}
-                rounded="lg"
+          <Box alignItems="center" space={2}>
+            <Icon as={FontAwesome5} name="venus-mars" size={16} color="black" mb={4} />
+            <Text fontSize="3xl" fontWeight="bold" color="black" textAlign="center">
+              How do you identify?
+            </Text>
+            <Text fontSize="md" color="gray.500" textAlign="center" mt={2} mb={6}>
+              Help us personalize your experience
+            </Text>
+          </Box>
+          <VStack space={3} width="100%">
+            {['Male', 'Female', 'Other', 'Prefer not to say'].map((option) => (
+              <Pressable
+                key={option}
+                onPress={() => setGender(option.toLowerCase())}
+                width="100%"
               >
-                <Text
-                  color={gender.toLowerCase() === option.toLowerCase() ? "white" : "black"}
-                  fontWeight="bold"
-                  fontSize="lg"
-                  textAlign="center"
+                <Box
+                  bg={gender.toLowerCase() === option.toLowerCase() ? "black" : "white"}
+                  borderColor={gender.toLowerCase() === option.toLowerCase() ? "black" : "gray.300"}
+                  borderWidth={1}
+                  p={4}
+                  rounded="xl"
+                  shadow={gender.toLowerCase() === option.toLowerCase() ? "2" : "none"}
                 >
-                  {option}
-                </Text>
-              </Box>
-            </Pressable>
-          ))}
+                  <Text
+                    color={gender.toLowerCase() === option.toLowerCase() ? "white" : "black"}
+                    fontWeight="medium"
+                    fontSize="lg"
+                    textAlign="center"
+                  >
+                    {option}
+                  </Text>
+                </Box>
+              </Pressable>
+            ))}
+          </VStack>
         </VStack>
       </ScrollView>
     </Animated.View>
@@ -253,21 +383,63 @@ const OnboardingScreen = ({ route, navigation }) => {
     </VStack>
   );
 
+  const AgeErrorMessage = () => (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        bottom: 20,
+        left: 20,
+        right: 20,
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      }}
+    >
+      <Box
+        bg="red.500"
+        p="4"
+        rounded="2xl"
+        flexDirection="row"
+        alignItems="center"
+        shadow={5}
+      >
+        <Center w="60px" h="60px" mr="4">
+          <Text fontSize="4xl">⚠️</Text>
+        </Center>
+        <VStack flex={1}>
+          <Text color="white" fontWeight="bold" fontSize="lg">
+            Age Restriction
+          </Text>
+          <Text color="white" fontSize="sm">
+            {ageErrorMessage}
+          </Text>
+        </VStack>
+        <Icon 
+          as={Ionicons} 
+          name="close-circle-outline" 
+          size="sm" 
+          color="white" 
+          onPress={() => hideErrorAnimation()} 
+        />
+      </Box>
+    </Animated.View>
+  );
+
   return (
-    <Box style={styles.container} bg="white">
+    <Box style={styles.container} bg="white" safeArea>
       {step < 4 ? (
         <>
           {renderStepIndicator()}
           {renderStepContent()}
-          <HStack space={4} justifyContent="center" mb={6}>
+          <HStack space={4} justifyContent="center" px={6} pb={6} mt={6}>
             {step > 1 && (
               <Button
                 onPress={handleBack}
                 variant="outline"
                 borderColor="black"
-                _text={{ color: "black" }}
+                _text={{ color: "black", fontWeight: "medium" }}
                 w="40%"
-                rounded="full"
+                rounded="xl"
+                py={4}
               >
                 Back
               </Button>
@@ -276,15 +448,39 @@ const OnboardingScreen = ({ route, navigation }) => {
               onPress={step === 3 ? handleSubmit : handleNext}
               isLoading={loading}
               bg="black"
-              _text={{ color: "white" }}
+              _text={{ color: "white", fontWeight: "bold" }}
               w={step === 1 ? "80%" : "40%"}
-              rounded="full"
+              rounded="xl"
+              py={4}
+              shadow={2}
             >
-              {step === 3 ? 'Submit' : 'Next'}
+              {step === 3 ? 'Complete' : 'Next'}
             </Button>
           </HStack>
         </>
-      ) : renderConfirmation()}
+      ) : (
+        <Center flex={1} px={6}>
+          <Icon as={FontAwesome5} name="check-circle" size={20} color="black" mb={6} />
+          <Text fontSize="3xl" fontWeight="bold" color="black" textAlign="center" mb={4}>
+            Welcome aboard, {firstName}!
+          </Text>
+          <Text fontSize="lg" color="gray.600" textAlign="center" mb={8}>
+            Your journey with RideShare begins now. Get ready for amazing rides!
+          </Text>
+          <Button
+            onPress={() => navigation.replace('Main')}
+            bg="black"
+            _text={{ color: "white", fontSize: 'lg', fontWeight: 'bold' }}
+            rounded="xl"
+            w="100%"
+            py={4}
+            shadow={2}
+          >
+            Start Exploring
+          </Button>
+        </Center>
+      )}
+      {showAgeError && <AgeErrorMessage />}
     </Box>
   );
 };
@@ -292,7 +488,8 @@ const OnboardingScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: Platform.OS === 'ios' ? 40 : 0,
+    backgroundColor: 'white',
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
   },
   stepsContainer: {
     flexDirection: 'row',
@@ -300,7 +497,8 @@ const styles = StyleSheet.create({
   },
   step: {
     width: width,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -308,6 +506,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     resizeMode: 'contain',
+    marginVertical: 20,
   },
 });
 

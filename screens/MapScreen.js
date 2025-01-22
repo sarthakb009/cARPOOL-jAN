@@ -8,20 +8,19 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  FlatList,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import axios from 'axios';
 import PropTypes from 'prop-types';
 import { useToast } from 'native-base';
 import { Image } from 'react-native';
-import { FontAwesome5, MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { TextInput } from 'react-native';
-import debounce from 'lodash/debounce';
+import { Searchbar } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
 // **Note:** Avoid hardcoding API keys in production environments.
 // For demonstration purposes, API keys are kept as constants.
-const OLA_API_KEY = 'EUfyvZrGNq5nhaO07DeHxfBehVrlqPIFTAqDY3em';
+const OLA_API_KEY = 'BLiCQHHuN3GFygSHe27hv4rRBpbto7K35v7HXYtANC8';
 const REVERSE_GEOCODE_API_KEY = 'EUfyvZrGNq5nhaO07DeHxfBehVrlqPIFTAqDY3em';
 
 const MapScreen = ({
@@ -58,10 +57,6 @@ const MapScreen = ({
   const [currentRouteSegment, setCurrentRouteSegment] = useState(null);
   const [routeInfo, setRouteInfo] = useState(null);
   const [showRouteInfo, setShowRouteInfo] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [location, setLocation] = useState(null);
 
   // Console logging useEffect for debugging
   useEffect(() => {
@@ -764,99 +759,6 @@ const MapScreen = ({
     return Math.sqrt(dx * dx + dy * dy) * 111000; // Convert to meters
   };
 
-  // Add this function to fetch suggestions
-  const fetchSuggestions = async (query) => {
-    if (query.length > 2) {
-      try {
-        let url = `https://api.olamaps.io/places/v1/autocomplete?input=${encodeURIComponent(query)}`;
-        if (location) {
-          url += `&location=${location.coords.latitude},${location.coords.longitude}`;
-        }
-
-        url += `&api_key=${OLA_API_KEY}`;
-
-        const response = await axios.get(url);
-
-        if (response.data.status === 'ok') {
-          setSuggestions(response.data.predictions);
-          setShowSuggestions(true);
-        } else {
-          console.error('Error fetching suggestions:', response.data.error_message);
-          setSuggestions([]);
-        }
-      } catch (error) {
-        console.error('Error fetching suggestions:', error);
-        setSuggestions([]);
-      }
-    } else {
-      setSuggestions([]);
-    }
-  };
-
-  // Create a debounced version of fetchSuggestions
-  const debouncedFetchSuggestions = useCallback(
-    debounce((query) => fetchSuggestions(query), 300),
-    []
-  );
-
-  // Add function to handle suggestion selection
-  const handleSuggestionSelect = async (suggestion) => {
-    try {
-      let url = `https://api.olamaps.io/places/v1/details?place_id=${suggestion.place_id}`;
-      url += `&api_key=${OLA_API_KEY}`;
-
-      const response = await axios.get(url);
-
-      if (response.data.status === 'ok' && response.data.result) {
-        const location = response.data.result.geometry.location;
-        const newLocation = {
-          latitude: location.lat,
-          longitude: location.lng,
-        };
-
-        // Update map position
-        mapRef.current?.animateToRegion({
-          ...newLocation,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        });
-
-        // Update selected location and address
-        setSelectedLocation(newLocation);
-        setAddressName(suggestion.description);
-        
-        // Clear suggestions and search query
-        setSearchQuery(suggestion.description);
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    } catch (error) {
-      console.error('Error fetching place details:', error);
-      toast.show({
-        title: 'Error',
-        description: 'Failed to fetch location details',
-        status: 'error',
-      });
-    }
-  };
-
-  // Add this useEffect to get initial location
-  useEffect(() => {
-    const getLocation = async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const currentLocation = await Location.getCurrentPositionAsync({});
-          setLocation(currentLocation);
-        }
-      } catch (error) {
-        console.error('Error getting location:', error);
-      }
-    };
-
-    getLocation();
-  }, []);
-
   // Define styles inside the component
   const styles = StyleSheet.create({
     container: {
@@ -996,99 +898,92 @@ const MapScreen = ({
       fontWeight: 'bold',
       fontSize: 14,
     },
-    topContainer: {
+    searchContainer: {
       position: 'absolute',
-      top: 44,
+      top: 16,
       left: 16,
       right: 16,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
       zIndex: 1,
     },
+    searchBar: {
+      elevation: 4,
+      borderRadius: 12,
+      backgroundColor: 'white',
+    },
     backButton: {
-      width: 40,
-      height: 40,
-      backgroundColor: 'white',
-      borderRadius: 20,
-      justifyContent: 'center',
-      alignItems: 'center',
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-    },
-    searchContainer: {
-      flex: 1,
-      height: 40,
-      backgroundColor: 'white',
-      borderRadius: 20,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-    },
-    searchIcon: {
-      marginRight: 8,
-    },
-    searchInput: {
-      flex: 1,
-      height: '100%',
-      fontSize: 16,
-      color: '#000',
-    },
-    currentLocationButton: {
       position: 'absolute',
-      right: 16,
-      bottom: 180,
-      width: 48,
-      height: 48,
+      top: 80,
+      left: 16,
       backgroundColor: 'white',
-      borderRadius: 24,
-      justifyContent: 'center',
-      alignItems: 'center',
+      padding: 12,
+      borderRadius: 12,
       elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
+      zIndex: 1,
     },
-    suggestionsContainer: {
+    markerFixed: {
       position: 'absolute',
-      top: 100, // Position below the search bar
+      top: '50%',
+      left: '50%',
+      marginLeft: -24,
+      marginTop: -48,
+      zIndex: 2,
+    },
+    markerContainer: {
+      alignItems: 'center',
+    },
+    markerPin: {
+      fontSize: 48,
+    },
+    markerPulse: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: '#2563eb',
+      marginTop: -8,
+    },
+    addressContainer: {
+      position: 'absolute',
+      bottom: 24,
       left: 16,
       right: 16,
       backgroundColor: 'white',
-      borderRadius: 8,
-      maxHeight: 200,
-      elevation: 4,
+      padding: 20,
+      borderRadius: 16,
+      elevation: 8,
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      zIndex: 1000,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
     },
-    suggestionItem: {
-      padding: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: '#eee',
-    },
-    suggestionText: {
-      fontSize: 14,
-      color: '#333',
-    },
-    mainText: {
+    addressHeader: {
+      fontSize: 18,
       fontWeight: 'bold',
-      marginBottom: 4,
+      color: '#1f2937',
+      marginBottom: 8,
     },
-    secondaryText: {
-      color: '#666',
-      fontSize: 12,
+    addressText: {
+      fontSize: 16,
+      color: '#4b5563',
+      marginBottom: 16,
+      lineHeight: 24,
+    },
+    confirmButton: {
+      backgroundColor: 'black',
+      paddingVertical: 16,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      elevation: 2,
+    },
+    confirmButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: 'bold',
+      letterSpacing: 0.5,
+    },
+    loadingContainer: {
+      padding: 16,
+      alignItems: 'center',
     },
   });
 
@@ -1161,35 +1056,6 @@ const MapScreen = ({
       }
     }
   }, [shouldFetchRoute, driverLocation, passengerPickupLocation, passengerDropLocation, rideState, ride?.checkinStatus]);
-
-  // Add this new function to get the current location
-  const getCurrentLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required');
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
-
-      mapRef.current?.animateToRegion({
-        latitude,
-        longitude,
-        latitudeDelta: 0.005,
-        longitudeDelta: 0.005,
-      });
-
-      // Update the selected location and fetch its address
-      setSelectedLocation({ latitude, longitude });
-      const addressResult = await reverseGeocode(latitude, longitude);
-      setAddressName(addressResult.formattedAddress);
-    } catch (error) {
-      console.error('Error getting current location:', error);
-      Alert.alert('Error', 'Failed to get current location');
-    }
-  };
 
   // Return the component JSX
   return (
@@ -1278,88 +1144,58 @@ const MapScreen = ({
         </TouchableOpacity>
       )}
 
-      {isSelectMode && (
-        <>
-          {/* Back button and Search bar container */}
-          <View style={styles.topContainer}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="arrow-back" size={24} color="#000" />
-            </TouchableOpacity>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search location..."
-                placeholderTextColor="#666"
-                value={searchQuery}
-                onChangeText={(text) => {
-                  setSearchQuery(text);
-                  debouncedFetchSuggestions(text);
-                }}
-              />
+{isSelectMode && (
+      <>
+        <View style={styles.searchContainer}>
+          <Searchbar
+            placeholder="Search location"
+            onChangeText={(text) => {
+              // Handle search text change
+              console.log('Search:', text);
+            }}
+            style={styles.searchBar}
+            icon={() => <Ionicons name="search" size={24} color="#4b5563" />}
+          />
+        </View>
+
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#4b5563" />
+        </TouchableOpacity>
+
+        <View style={styles.markerFixed}>
+          <View style={styles.markerContainer}>
+            <Text style={styles.markerPin}>📍</Text>
+          </View>
+        </View>
+
+        <View style={styles.addressContainer}>
+          {isFetchingAddress ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#2563eb" />
             </View>
-          </View>
-
-          {/* Center marker */}
-          <View style={styles.markerFixed}>
-            <Text style={styles.markerText}>📍</Text>
-          </View>
-
-          {/* Current location button */}
-          <TouchableOpacity 
-            style={styles.currentLocationButton}
-            onPress={getCurrentLocation}
-          >
-            <Ionicons name="locate" size={24} color="#2563eb" />
-          </TouchableOpacity>
-
-          {/* Bottom address container */}
-          <View style={styles.addressContainer}>
-            {isFetchingAddress ? (
-              <ActivityIndicator size="small" color="#000" />
-            ) : (
-              <>
-                <Text style={styles.addressText}>
-                  {addressName || 'Move the map to select a location'}
+          ) : (
+            <>
+              <Text style={styles.addressHeader}>Selected Location</Text>
+              <Text style={styles.addressText}>
+                {addressName || 'Move the map to select a location'}
+              </Text>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={handleConfirm}
+                accessibilityLabel="Confirm Location"
+              >
+                <Text style={styles.confirmButtonText}>
+                  Confirm Location
                 </Text>
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={handleConfirm}
-                  accessibilityLabel="Confirm Location"
-                >
-                  <Text style={styles.confirmButtonText}>Confirm</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-
-          {/* Suggestions list */}
-          {isSelectMode && showSuggestions && suggestions.length > 0 && (
-            <View style={styles.suggestionsContainer}>
-              <FlatList
-                data={suggestions}
-                keyExtractor={(item) => item.place_id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.suggestionItem}
-                    onPress={() => handleSuggestionSelect(item)}
-                  >
-                    <Text style={[styles.suggestionText, styles.mainText]}>
-                      {item.structured_formatting.main_text}
-                    </Text>
-                    <Text style={[styles.suggestionText, styles.secondaryText]}>
-                      {item.structured_formatting.secondary_text}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
+              </TouchableOpacity>
+            </>
           )}
-        </>
-      )}
+        </View>
+      </>
+    )}
     </View>
   );
 };
