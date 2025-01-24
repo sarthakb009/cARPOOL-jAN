@@ -294,9 +294,14 @@ const RideListScreen = () => {
     </Box>
   );
 };
+
 const styles = StyleSheet.create({
   listContainer: {
     padding: 20,
   },
 });
+
+
 export default RideListScreen;
+
+//end of file
