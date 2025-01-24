@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { ScrollView, StyleSheet, ActivityIndicator, Alert, Platform } from 'react-native';
-import { Box, VStack, HStack, Text, Icon, Button, Menu, Pressable, Spinner, AlertDialog, Input, FormControl } from 'native-base';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { ScrollView, StyleSheet, ActivityIndicator, Alert, Platform, Modal, TouchableWithoutFeedback, View, LayoutAnimation, Animated } from 'react-native';
+import { Box, VStack, HStack, Text, Icon, Button, Menu, Pressable, Spinner, AlertDialog, Input, FormControl, Avatar } from 'native-base';
 import { FontAwesome5, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -10,6 +10,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { MotiView } from 'moti';
 import { Easing } from 'react-native-reanimated';
 import { calculateAverageRating } from '../utils/ratingUtils';
+import { BlurView } from 'expo-blur';
 
 const DriverProfileScreen = () => {
   const [driverData, setDriverData] = useState(null);
@@ -30,6 +31,8 @@ const DriverProfileScreen = () => {
   const [isEditing, setIsEditing] = useState(false);
   const cancelRef = React.useRef(null);
   const [reviews, setReviews] = useState([]);
+  const [expandedField, setExpandedField] = useState(null); // Tracks which field is expanded
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   const fetchDriverData = useCallback(async () => {
     try {
@@ -79,6 +82,26 @@ const DriverProfileScreen = () => {
   useEffect(() => {
     fetchDriverReviews();
   }, []);
+
+  useEffect(() => {
+    if (isEditModalOpen) {
+      // Slide up
+      Animated.spring(slideAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11
+      }).start();
+    } else {
+      // Slide down
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 65,
+        friction: 11
+      }).start();
+    }
+  }, [isEditModalOpen]);
 
   const calculateAge = (dateOfBirth) => {
     const today = new Date();
@@ -333,82 +356,148 @@ const DriverProfileScreen = () => {
       }
     };
 
+    const translateY = slideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [600, 0]
+    });
+
+    const backdropOpacity = slideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, 0.5]
+    });
+
     return (
-      <AlertDialog 
-        isOpen={isOpen} 
-        onClose={onClose} 
-        leastDestructiveRef={cancelRef}
+      <Modal
+        visible={isOpen}
+        transparent
+        animationType="none"
+        onRequestClose={onClose}
       >
-        <AlertDialog.Content>
-        <AlertDialog.Header 
-          flexDirection="row" 
-          justifyContent="space-between" 
-          alignItems="center"
-        >
-          <Text fontSize="lg" fontWeight="bold">Edit Profile</Text>
-          <Button 
-            onPress={onClose} 
-            variant="ghost"
-            ref={cancelRef}
-            _hover={{ bg: "transparent" }} 
-            _pressed={{ bg: "transparent" }}
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View 
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: 'black',
+                opacity: backdropOpacity
+              }
+            ]}
           >
-            <Icon as={Ionicons} name="close" size={6} color="gray.500" />
-          </Button>
-        </AlertDialog.Header>
-          <AlertDialog.Body>
-            <VStack space={4}>
-              <FormControl isInvalid={!!errors.license}>
-                <FormControl.Label>Driving License</FormControl.Label>
-                <Input
-                  value={formData.drivingLicense}
-                  onChangeText={(value) => setFormData(prev => ({...prev, drivingLicense: value}))}
-                  placeholder="Enter license number"
-                  size="lg"
-                  borderRadius="lg"
-                />
-              </FormControl>
+            <TouchableWithoutFeedback onPress={onClose}>
+              <View style={StyleSheet.absoluteFill} />
+            </TouchableWithoutFeedback>
+          </Animated.View>
 
-              <FormControl isInvalid={!!errors.phone}>
-                <FormControl.Label>Phone Number</FormControl.Label>
-                <Input
-                  value={formData.driverPhone?.toString()}
-                  onChangeText={(value) => setFormData(prev => ({...prev, driverPhone: value}))}
-                  placeholder="Enter phone number"
-                  keyboardType="phone-pad"
-                  size="lg"
-                  borderRadius="lg"
-                />
-                <FormControl.ErrorMessage>{errors.phone}</FormControl.ErrorMessage>
-              </FormControl>
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [{ translateY }]
+              }
+            ]}
+          >
+            <BlurView intensity={30} style={StyleSheet.absoluteFill} />
+            <View style={styles.bottomSheetContent}>
+              {/* Handle Bar */}
+              <View style={styles.handleBar} />
 
-              <FormControl isInvalid={!!errors.email}>
-                <FormControl.Label>Email</FormControl.Label>
-                <Input
-                  value={formData.email}
-                  onChangeText={(value) => setFormData(prev => ({...prev, email: value}))}
-                  placeholder="Enter email"
-                  keyboardType="email-address"
-                  size="lg"
-                  borderRadius="lg"
-                />
-                <FormControl.ErrorMessage>{errors.email}</FormControl.ErrorMessage>
-              </FormControl>
-            </VStack>
-          </AlertDialog.Body>
-          <AlertDialog.Footer>
-            <Button.Group space={2}>
+              {/* Header */}
+              <HStack alignItems="center" justifyContent="space-between" mb={6}>
+                <Text fontSize="xl" fontWeight="bold">
+                  Edit Profile
+                </Text>
+                <Pressable
+                  onPress={onClose}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Icon as={MaterialIcons} name="close" size={6} color="gray.500" />
+                </Pressable>
+              </HStack>
+
+              {/* Form Fields */}
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <VStack space={4}>
+                  <FormControl isInvalid={!!errors.license}>
+                    <FormControl.Label _text={{ color: 'gray.700' }}>
+                      Driving License
+                    </FormControl.Label>
+                    <Input
+                      value={formData.drivingLicense}
+                      onChangeText={(value) => setFormData(prev => ({ ...prev, drivingLicense: value }))}
+                      placeholder="Enter license number"
+                      size="lg"
+                      borderRadius="lg"
+                      bg="gray.50"
+                      borderWidth={0}
+                      _focus={{
+                        bg: "gray.100",
+                        borderWidth: 0,
+                      }}
+                    />
+                  </FormControl>
+
+                  <FormControl isInvalid={!!errors.phone}>
+                    <FormControl.Label _text={{ color: 'gray.700' }}>
+                      Phone Number
+                    </FormControl.Label>
+                    <Input
+                      value={formData.driverPhone?.toString()}
+                      onChangeText={(value) => setFormData(prev => ({ ...prev, driverPhone: value }))}
+                      placeholder="Enter phone number"
+                      keyboardType="phone-pad"
+                      size="lg"
+                      borderRadius="lg"
+                      bg="gray.50"
+                      borderWidth={0}
+                      _focus={{
+                        bg: "gray.100",
+                        borderWidth: 0,
+                      }}
+                    />
+                    <FormControl.ErrorMessage>{errors.phone}</FormControl.ErrorMessage>
+                  </FormControl>
+
+                  <FormControl isInvalid={!!errors.email}>
+                    <FormControl.Label _text={{ color: 'gray.700' }}>
+                      Email
+                    </FormControl.Label>
+                    <Input
+                      value={formData.email}
+                      onChangeText={(value) => setFormData(prev => ({ ...prev, email: value }))}
+                      placeholder="Enter email"
+                      keyboardType="email-address"
+                      size="lg"
+                      borderRadius="lg"
+                      bg="gray.50"
+                      borderWidth={0}
+                      _focus={{
+                        bg: "gray.100",
+                        borderWidth: 0,
+                      }}
+                    />
+                    <FormControl.ErrorMessage>{errors.email}</FormControl.ErrorMessage>
+                  </FormControl>
+                </VStack>
+              </ScrollView>
+
+              {/* Save Button */}
               <Button
-                bg="black"
-                isLoading={isLoading}
                 onPress={handleSave}
+                isLoading={isLoading}
+                bg="black"
+                _pressed={{ bg: "gray.800" }}
+                rounded="full"
+                py={4}
+                mt={6}
+                shadow="2"
+                _text={{ fontSize: "md", fontWeight: "semibold" }}
               >
                 Save Changes
               </Button>
-            </Button.Group>
-          </AlertDialog.Footer>
-        </AlertDialog.Content>
-      </AlertDialog>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     );
   };
 
@@ -435,17 +524,13 @@ const DriverProfileScreen = () => {
       </HStack>
       
       <VStack space={4} alignItems="center" pb={6}>
-        <Box
-          bg="black"
-          width={40}
-          height={40}
-          borderRadius={20}
-          alignItems="center"
-          justifyContent="center"
-          shadow={2}
-        >
-          <Text style={styles.avatarText}>{getInitials()}</Text>
-        </Box>
+      <Avatar
+        bg="gray.800"
+        size="xl"
+        source={null}
+      >
+        {getInitials()}
+      </Avatar>
         
         <VStack alignItems="center" space={2}>
           <Text style={styles.userName}>
@@ -702,8 +787,8 @@ const DriverProfileScreen = () => {
     );
   };
 
-  const InfoItem = ({ icon, label, value }) => (
-    <Box width="48%">
+  const InfoItem = ({ icon, label, value, onPress, isExpanded }) => (
+    <Pressable onPress={onPress} style={{ flex: isExpanded ? 1 : 0.48 }}>
       <HStack 
         space={3} 
         alignItems="center" 
@@ -727,15 +812,14 @@ const DriverProfileScreen = () => {
             fontSize="sm" 
             fontWeight="600" 
             color="gray.700" 
-            numberOfLines={1}
+            numberOfLines={isExpanded ? undefined : 1} // Show full text if expanded
             ellipsizeMode="tail"
-            style={{ width: label === 'EMAIL' ? 100 : 'auto' }}
           >
             {value}
           </Text>
         </VStack>
       </HStack>
-    </Box>
+    </Pressable>
   );
 
   return (
@@ -747,29 +831,47 @@ const DriverProfileScreen = () => {
         {renderProfileHeader()}
 
         <VStack space={6} mt={6} px={4}>
-          <Box style={styles.cardContainer}>
-            <HStack justifyContent="space-between" alignItems="center" mb={6}>
-              <HStack space={3} alignItems="center">
-                <Icon 
-                  as={FontAwesome5} 
-                  name="user-circle" 
-                  size={5} 
-                  color="gray.700"
-                />
-                <Text style={styles.cardTitle}>Personal Information</Text>
-              </HStack>
-            </HStack>
-            <VStack space={4}>
-              <HStack justifyContent="space-between">
-                <InfoItem icon="phone" label="Phone" value={driverData.driverPhone} />
-                <InfoItem icon="envelope" label="Email" value={driverData.email} />
-              </HStack>
-              <HStack justifyContent="space-between">
-                <InfoItem icon="birthday-cake" label="Age" value={`${calculateAge(driverData.dateOfBirth)} years`} />
-                <InfoItem icon="venus-mars" label="Gender" value={driverData.gender} />
-              </HStack>
-            </VStack>
-          </Box>
+        <Box style={styles.cardContainer}>
+  <HStack justifyContent="space-between" alignItems="center" mb={6}>
+    <HStack space={3} alignItems="center">
+      <Icon 
+        as={FontAwesome5} 
+        name="user-circle" 
+        size={5} 
+        color="gray.700"
+      />
+      <Text style={styles.cardTitle}>Personal Information</Text>
+    </HStack>
+  </HStack>
+  <VStack space={4}>
+    <HStack justifyContent="space-between">
+      <InfoItem 
+        icon="phone" 
+        label="Phone" 
+        value={driverData.driverPhone} 
+        onPress={() => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setExpandedField(expandedField === 'phone' ? null : 'phone');
+        }} // Toggle phone expansion
+        isExpanded={expandedField === 'phone'} // Pass expanded state
+      />
+      <InfoItem 
+        icon="envelope" 
+        label="Email" 
+        value={driverData.email} 
+        onPress={() => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setExpandedField(expandedField === 'email' ? null : 'email')
+        }} // Toggle email expansion
+        isExpanded={expandedField === 'email'} // Pass expanded state
+      />
+    </HStack>
+    <HStack justifyContent="space-between">
+      <InfoItem icon="birthday-cake" label="Age" value={`${calculateAge(driverData.dateOfBirth)} years`} />
+      <InfoItem icon="venus-mars" label="Gender" value={driverData.gender} />
+    </HStack>
+  </VStack>
+</Box>
 
           <Box style={styles.cardContainer}>
             <HStack justifyContent="space-between" alignItems="center" mb={6}>
@@ -1149,6 +1251,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 8,
+  },
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    overflow: 'hidden'
+  },
+  bottomSheetContent: {
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20, // Extra padding for iOS
+    maxHeight: '90%'
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 10
   },
 });
 

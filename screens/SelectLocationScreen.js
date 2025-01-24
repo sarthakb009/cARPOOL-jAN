@@ -167,7 +167,7 @@ const SelectLocationScreen = ({ navigation, route }) => {
     fetchSuggestions(text);
   };
 
-  const handleLocationSelect = (selectedLocation) => {
+  const handleLocationSelect = async (selectedLocation) => {
     const locationData = {
       address: selectedLocation.structured_formatting?.main_text || selectedLocation.description,
       coordinates: {
@@ -175,6 +175,14 @@ const SelectLocationScreen = ({ navigation, route }) => {
         lng: selectedLocation.geometry?.location?.lng || null
       }
     };
+
+    // Store the selected location in AsyncStorage
+    try {
+      const key = isPickup ? 'lastPickupLocation' : 'lastDropLocation';
+      await AsyncStorage.setItem(key, JSON.stringify(locationData));
+    } catch (error) {
+      console.error('Error saving location to AsyncStorage:', error);
+    }
 
     console.log('Sending location data:', locationData);
     onSelect(locationData);

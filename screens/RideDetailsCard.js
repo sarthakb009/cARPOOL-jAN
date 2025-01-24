@@ -7,10 +7,48 @@ import { format, isToday, isYesterday } from 'date-fns';
 
 const RideDetailsCard = ({ data, onPress }) => {
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'scheduled': return '#FFB800';  // amber
-      case 'completed': return '#4299E1';  // blue
-      default: return '#A0AEC0';  // gray
+    // Normalize the status to match RideStates format
+    const normalizedStatus = status?.toUpperCase()?.replace(' ', '_');
+    
+    switch (normalizedStatus) {
+      case 'SCHEDULED':
+      case 'PENDING':
+        return '#FFB800';  // amber
+      case 'ACCEPTED':
+        return '#48BB78';  // green
+      case 'IN_PROGRESS':
+      case 'DRIVER_ARRIVING':
+        return '#4299E1';  // blue
+      case 'COMPLETED':
+        return '#38A169';  // green
+      case 'CANCELLED':
+      case 'CANCELLED_BY_DRIVER':
+      case 'CANCELLED_BY_PASSENGER':
+        return '#E53E3E';  // red
+      case 'REJECTED':
+        return '#F56565';  // red
+      default:
+        return '#A0AEC0';  // gray
+    }
+  };
+
+  const getFormattedStatus = (status) => {
+    // Normalize and format the status for display
+    if (!status) return 'N/A';
+    
+    const normalizedStatus = status.toUpperCase().replace(' ', '_');
+    switch (normalizedStatus) {
+      case 'DRIVER_ARRIVING':
+        return 'Driver Arriving';
+      case 'IN_PROGRESS':
+        return 'In Progress';
+      case 'CANCELLED_BY_DRIVER':
+        return 'Cancelled by Driver';
+      case 'CANCELLED_BY_PASSENGER':
+        return 'Cancelled by Passenger';
+      default:
+        return status.charAt(0).toUpperCase() + 
+               status.slice(1).toLowerCase().replace('_', ' ');
     }
   };
 
@@ -55,7 +93,7 @@ const RideDetailsCard = ({ data, onPress }) => {
                 rounded="full"
               >
                 <Text color="white" fontSize="2xs" fontWeight="bold">
-                  {data.status}
+                  {getFormattedStatus(data.status)}
                 </Text>
               </Box>
             </HStack>

@@ -123,8 +123,8 @@ export const RecentSearchItem = ({ search }) => (
       <HStack space={4} alignItems="center">
         <Icon as={Ionicons} name="time-outline" size={6} color="black" />
         <VStack flex={1}>
-          <Text fontWeight="bold" fontSize="md" color="black">{search.from} → {search.to}</Text>
-          <Text color="gray.600" fontSize="sm">{search.time}</Text>
+          <Text fontWeight="bold" fontSize="md" color="black">{`${search.source} → ${search.destination}`}</Text>
+          <Text color="gray.600" fontSize="sm">{new Date(search.searchTimestamp).toLocaleDateString()}</Text>
         </VStack>
       </HStack>
     </Box>

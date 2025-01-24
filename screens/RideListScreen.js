@@ -200,36 +200,9 @@ const RideListScreen = () => {
       setRefreshing(false);
     }
   }, [pickupCoords, dropCoords, rideDateTime]);
-  const fetchRideRequests = useCallback(async () => {
-    const token = await AsyncStorage.getItem('userToken');
-    const passengerId = await AsyncStorage.getItem('passengerId');
-    
-    const requests = {};
-    for (const ride of rides) {
-      try {
-        const requestResponse = await axios.get(`http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getRequestByRide?rideId=${ride.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          withCredentials: false
-        });
-        const userRequest = requestResponse.data.find(request => request.passengerId.toString() === passengerId);
-        if (userRequest) {
-          requests[ride.id] = userRequest.status;
-        }
-      } catch (requestError) {
-        console.error('Error fetching ride request:', requestError);
-      }
-    }
-    setRideRequests(requests);
-  }, [rides]);
   useEffect(() => {
-    fetchRides(); // Fetch rides initially
-
-    const intervalId = setInterval(() => {
-      fetchRideRequests(); // Fetch ride requests every 120 seconds
-    }, 15000); // 120 seconds
-
-    return () => clearInterval(intervalId); // Clear interval on unmount
-  }, [fetchRides]); // Only depend on fetchRides
+    fetchRides();
+  }, [fetchRides]);
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchRides();
@@ -294,14 +267,9 @@ const RideListScreen = () => {
     </Box>
   );
 };
-
 const styles = StyleSheet.create({
   listContainer: {
     padding: 20,
   },
 });
-
-
 export default RideListScreen;
-
-//end of file

@@ -46,6 +46,9 @@ const RideStates = {
   READY_TO_START: 'READY_TO_START',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  CANCELLED_BY_DRIVER: 'CANCELLED_BY_DRIVER',
+  CANCELLED_BY_PASSENGER: 'CANCELLED_BY_PASSENGER',
 };
 
 // Custom button styles
@@ -333,9 +336,26 @@ const panResponder = PanResponder.create({
       const rideData = response.data;
       setRide(rideData);
       
-      // Update status only if we have valid data
+      // Update status based on the API response
       if (rideData.status) {
         setCurrentRideStatus(rideData.status);
+        // Set appropriate ride state based on status
+        switch (rideData.status) {
+          case 'CANCELLED_BY_DRIVER':
+          case 'CANCELLED_BY_PASSENGER':
+            setRideState(RideStates.CANCELLED);
+            break;
+          case 'COMPLETED':
+            setRideState(RideStates.COMPLETED);
+            break;
+          case 'IN_PROGRESS':
+            setRideState(RideStates.IN_PROGRESS);
+            break;
+          // Add other status mappings as needed
+          default:
+            // Handle default state
+            updateRideState();
+        }
       }
 
       // Process coordinates if available
@@ -372,7 +392,7 @@ const panResponder = PanResponder.create({
     } finally {
       setLoading(false);
     }
-  }, [initialRide?.id, setupRideRequestsEventSource, setupRideStatusEventSource, toast]);
+  }, [initialRide?.id, updateRideState, toast]);
 
   useEffect(() => {
     initialize();
@@ -491,6 +511,21 @@ const panResponder = PanResponder.create({
             title: 'Ride Completed',
             description: eventData.message,
             status: 'success',
+            placement: 'top',
+          });
+          break;
+        case 'RIDE_CANCELLED':
+          setCurrentRideStatus('Cancelled');
+          setRide((prevRide) => ({
+            ...prevRide,
+            status: 'Cancelled',
+            cancellationTime: eventData.data.cancellationTime,
+          }));
+          setRideState(RideStates.CANCELLED);
+          toast.show({
+            title: 'Ride Cancelled',
+            description: eventData.message || 'The ride has been cancelled',
+            status: 'warning',
             placement: 'top',
           });
           break;
@@ -621,6 +656,8 @@ const panResponder = PanResponder.create({
   const updateRideState = useCallback(() => {
     if (currentRideStatus === 'Completed') {
       setRideState(RideStates.COMPLETED);
+    } else if (currentRideStatus === 'Cancelled') {
+      setRideState(RideStates.CANCELLED);
     } else if (currentRideStatus === 'Ongoing') {
       setRideState(RideStates.IN_PROGRESS);
     } else {
@@ -1381,7 +1418,6 @@ const panResponder = PanResponder.create({
 
   // Render content based on ride state
   const renderStateContent = useCallback(() => {
-
     switch (rideState) {
       case RideStates.WAITING_FOR_REQUESTS:
         return (
@@ -1402,7 +1438,7 @@ const panResponder = PanResponder.create({
             </Text>
             <Button
               onPress={cancelRideAsDriver}
-              bg="gray.400"
+              bg="black"
               _text={{ color: 'white', fontWeight: 'bold' }}
               rounded="full"
               mt="4"
@@ -1863,6 +1899,66 @@ const panResponder = PanResponder.create({
       case RideStates.COMPLETED:
         return renderJourneyCompleted();
 
+      case RideStates.CANCELLED:
+        const cancellationType = ride.status === 'CANCELLED_BY_PASSENGER' ? 'Passenger' : 'Driver';
+        const cancellationMessage = ride.status === 'CANCELLED_BY_PASSENGER' 
+          ? 'This ride was cancelled by the passenger.'
+          : 'You cancelled this ride.';
+
+        return (
+          <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+            <HStack alignItems="center" mb="4">
+              <Icon as={Feather} name="x-circle" size="6" color="red.600" mr="2" />
+              <Text fontSize="lg" fontWeight="bold" color="black">
+                Ride Cancelled by {cancellationType}
+              </Text>
+            </HStack>
+            
+            <Box bg="red.50" p="4" rounded="lg" mb="4">
+              <HStack alignItems="center" mb="2">
+                <Icon as={Ionicons} name="time-outline" size="5" color="red.600" mr="2" />
+                <Text fontSize="sm" color="red.600" fontWeight="medium">
+                  Cancelled at: {new Date(ride.cancellationTime || Date.now()).toLocaleTimeString()}
+                </Text>
+              </HStack>
+              
+              <Text fontSize="sm" color="gray.600" mt="2">
+                {cancellationMessage}
+              </Text>
+
+              {acceptedPassengers.length > 0 && (
+                <VStack mt="3">
+                  <Text fontSize="sm" color="gray.600" mb="2">
+                    Affected Passengers:
+                  </Text>
+                  {acceptedPassengers.map((passenger) => (
+                    <HStack key={passenger.id} space="2" alignItems="center">
+                      <Icon as={Ionicons} name="person-outline" size="4" color="gray.600" />
+                      <Text fontSize="sm" color="gray.600">
+                        {passenger.name}
+                      </Text>
+                    </HStack>
+                  ))}
+                </VStack>
+              )}
+            </Box>
+
+            <Text fontSize="sm" color="gray.600" mb="4">
+              You can create a new ride offer when you're ready.
+            </Text>
+
+            <Button
+              onPress={() => navigation.navigate('OfferRide')}
+              bg="black"
+              _text={{ color: 'white', fontWeight: 'bold' }}
+              rounded="full"
+              leftIcon={<Icon as={Ionicons} name="add-circle-outline" size="sm" color="white" />}
+            >
+              Create New Ride
+            </Button>
+          </Box>
+        );
+
       default:
         return null;
     }
@@ -1885,6 +1981,7 @@ const panResponder = PanResponder.create({
     isCheckingIn,
     isCheckingOut,
     isEndingJourney,
+    navigation,
   ]);
 
   // Render journey completed section

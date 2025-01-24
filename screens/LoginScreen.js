@@ -235,40 +235,58 @@ const LoginScreen = ({ navigation }) => {
         </VStack>
       </Box>
       {showError && (
-        <Animated.View
-          style={{
-            position: 'absolute',
-            bottom: 20,
-            left: 20,
-            right: 20,
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}
+  <Animated.View
+    style={{
+      position: 'absolute',
+      bottom: 16,
+      left: 16,
+      right: 16,
+      opacity: fadeAnim,
+      transform: [{ translateY: slideAnim }],
+    }}
+  >
+    <Pressable onPress={hideErrorMessage}>
+      <Box
+        bg="white"
+        p="4"
+        rounded="xl"
+        flexDirection="row"
+        alignItems="center"
+        shadow="3"
+        borderLeftWidth={4}
+        borderLeftColor="red.500"
+      >
+        <Icon
+          as={Ionicons}
+          name="alert-circle"
+          size="md"
+          color="red.500"
+          mr="3"
+        />
+        <VStack flex={1} space={0.5}>
+          <Text color="coolGray.800" fontWeight="medium" fontSize="sm">
+            Login Failed
+          </Text>
+          <Text color="coolGray.600" fontSize="xs">
+            Invalid username or password
+          </Text>
+        </VStack>
+        <Pressable
+          onPress={hideErrorMessage}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Pressable onPress={hideErrorMessage}>
-            <Box bg="red.500"
-              p="4"
-              rounded="2xl"
-              flexDirection="row"
-              alignItems="center"
-              shadow={5}
-            >
-              <Center w="60px" h="60px" mr="4">
-                <Text fontSize="4xl">😕</Text>
-              </Center>
-              <VStack flex={1}>
-                <Text color="white" fontWeight="bold" fontSize="lg">
-                  Oops! Login Failed
-                </Text>
-                <Text color="white" fontSize="sm">
-                  Invalid username or password. Please try again.
-                </Text>
-              </VStack>
-              <Icon as={Ionicons} name="close-circle-outline" size="sm" color="white" onPress={hideErrorMessage} />
-            </Box>
-          </Pressable>
-        </Animated.View>
-      )}
+          <Icon
+            as={Ionicons}
+            name="close"
+            size="sm"
+            color="coolGray.500"
+          />
+        </Pressable>
+      </Box>
+    </Pressable>
+  </Animated.View>
+)}
+
     </ScrollView>
   );
 };

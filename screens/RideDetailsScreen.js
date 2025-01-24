@@ -44,6 +44,8 @@ const RideStates = {
   DRIVER_ARRIVING: 'DRIVER_ARRIVING',
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
+  CANCELLED_BY_PASSENGER: 'CANCELLED_BY_PASSENGER',
+  CANCELLED_BY_DRIVER: 'CANCELLED_BY_DRIVER',
 };
 
 const RideDetailsScreen = () => {
@@ -166,7 +168,6 @@ const RideDetailsScreen = () => {
         throw new Error('No ride ID provided');
       }
 
-      // Fetch ride details
       const response = await axios.get(
         `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/rides/getById?id=${routeRideId}`,
         {
@@ -178,13 +179,21 @@ const RideDetailsScreen = () => {
         throw new Error('No ride data received');
       }
 
-      // Update ride data
       const rideData = response.data;
       setRide(rideData);
       
-      // Update status only if we have valid data
+      // Handle ride status
       if (rideData.status) {
         setCurrentRideStatus(rideData.status);
+        switch (rideData.status) {
+          case 'CANCELLED_BY_PASSENGER':
+            setRideState(RideStates.CANCELLED_BY_PASSENGER);
+            break;
+          case 'CANCELLED_BY_DRIVER':
+            setRideState(RideStates.CANCELLED_BY_DRIVER);
+            break;
+          // ... other status handling
+        }
       }
 
       // Process coordinates if available
@@ -205,7 +214,7 @@ const RideDetailsScreen = () => {
       }
     } catch (error) {
       console.error('Initialization Error:', error);
-      setError(error.message || 'Failed to initialize. Please try again.');
+      setError(error.message || 'Failed to initialize');
       toast.show({
         title: "Error",
         description: error.message || "Failed to load ride details",
@@ -770,9 +779,9 @@ const RideDetailsScreen = () => {
     const availableSeats = totalCapacity - occupiedSeats;
 
     if (availableSeats <= 0) {
-      return 'No seats available';
+      return 'None';
     }
-    return `${availableSeats} out of ${totalCapacity} available`;
+    return `${availableSeats}`;
   };
 
   // Function to render the main card with ride details
@@ -973,7 +982,7 @@ const RideDetailsScreen = () => {
               </Text>
             </VStack>
             <VStack>
-              <Text fontSize="xs" color="gray.400">SEATS</Text>
+              <Text fontSize="xs" color="gray.400">AVAILABLE SEATS</Text>
               <Text fontSize="md" fontWeight="semibold" color="gray.800">
                 {calculateSeatAvailability(rideDetails)}
               </Text>
@@ -1053,11 +1062,11 @@ const RideDetailsScreen = () => {
       );
 
       if (response.data) {
-        setRideState(RideStates.CANCELED);
+        setRideState(RideStates.CANCELLED_BY_PASSENGER);
         
         setRideDetails(prevDetails => ({
           ...prevDetails,
-          status: 'CANCELED'
+          status: 'CANCELLED_BY_PASSENGER'
         }));
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -1133,38 +1142,143 @@ const RideDetailsScreen = () => {
     }
 
     switch (rideState) {
-      case RideStates.CANCELED:
+      case RideStates.CANCELLED_BY_PASSENGER:
         return (
-          <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
-            <HStack alignItems="center" mb="4">
-              <Icon as={Feather} name="x-circle" size="6" color="red.600" mr="2" />
-              <Text fontSize="lg" fontWeight="bold" color="black">
-                Ride Cancelled
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+              <HStack alignItems="center" mb="4">
+                <Icon as={Feather} name="x-circle" size="6" color="red.600" mr="2" />
+                <Text fontSize="lg" fontWeight="bold" color="black">
+                  You Cancelled This Ride
+                </Text>
+              </HStack>
+
+              <Box bg="red.50" p="4" rounded="lg" mb="4">
+                <VStack space="3">
+                  <HStack alignItems="center">
+                    <Icon as={Ionicons} name="time-outline" size="5" color="red.600" mr="2" />
+                    <Text fontSize="sm" color="red.600" fontWeight="medium">
+                      Cancelled at: {new Date(ride.cancellationTime || Date.now()).toLocaleTimeString()}
+                    </Text>
+                  </HStack>
+
+                  <HStack alignItems="center">
+                    <Icon as={Ionicons} name="location-outline" size="5" color="gray.600" mr="2" />
+                    <VStack flex={1}>
+                      <Text fontSize="xs" color="gray.500">Pickup Location</Text>
+                      <Text fontSize="sm" color="gray.700" numberOfLines={1}>
+                        {ride.source || 'N/A'}
+                      </Text>
+                    </VStack>
+                  </HStack>
+
+                  <HStack alignItems="center">
+                    <Icon as={Ionicons} name="flag-outline" size="5" color="gray.600" mr="2" />
+                    <VStack flex={1}>
+                      <Text fontSize="xs" color="gray.500">Drop Location</Text>
+                      <Text fontSize="sm" color="gray.700" numberOfLines={1}>
+                        {ride.destination || 'N/A'}
+                      </Text>
+                    </VStack>
+                  </HStack>
+                </VStack>
+              </Box>
+
+              <Text fontSize="sm" color="gray.600" mb="4">
+                Your ride has been cancelled successfully. The driver has been notified.
               </Text>
-            </HStack>
-            <Text fontSize="sm" color="gray.600" mb="4">
-              You have successfully cancelled this ride. We hope to see you book another ride soon!
-            </Text>
-            <Box bg="gray.100" p="4" rounded="lg" mb="4">
-              <Text fontSize="sm" color="gray.600">
-                Cancellation Details:
-              </Text>
-              <Text fontSize="sm" fontWeight="medium" mt="2">
-                • Cancelled on: {new Date().toLocaleDateString()}
-              </Text>
-              <Text fontSize="sm" fontWeight="medium">
-                • Ride ID: {routeRideId}
-              </Text>
+
+              <VStack space="3">
+                <Button
+                  onPress={() => navigation.navigate('FindRide')}
+                  bg="black"
+                  _text={{ color: 'white', fontWeight: 'bold' }}
+                  rounded="full"
+                  leftIcon={<Icon as={Ionicons} name="search-outline" size="sm" color="white" />}
+                >
+                  Find New Ride
+                </Button>
+
+                <Button
+                  onPress={() => navigation.navigate('RideHistory')}
+                  variant="outline"
+                  borderColor="gray.300"
+                  _text={{ color: 'gray.700' }}
+                  rounded="full"
+                  leftIcon={<Icon as={Ionicons} name="time-outline" size="sm" color="gray.700" />}
+                >
+                  View Ride History
+                </Button>
+              </VStack>
             </Box>
-            <Button
-              onPress={() => navigation.navigate('FindRide')}
-              bg="black"
-              _text={{ color: 'white', fontWeight: 'bold' }}
-              rounded="full"
-            >
-              Find New Ride
-            </Button>
-          </Box>
+          </Animated.View>
+        );
+
+      case RideStates.CANCELLED_BY_DRIVER:
+        return (
+          <Animated.View style={{ opacity: fadeAnim }}>
+            <Box bg="white" rounded="xl" p="6" shadow="2" mb="4">
+              <HStack alignItems="center" mb="4">
+                <Icon as={Feather} name="alert-circle" size="6" color="orange.600" mr="2" />
+                <Text fontSize="lg" fontWeight="bold" color="black">
+                  Ride Cancelled by Driver
+                </Text>
+              </HStack>
+
+              <Box bg="orange.50" p="4" rounded="lg" mb="4">
+                <VStack space="3">
+                  <HStack alignItems="center">
+                    <Icon as={Ionicons} name="time-outline" size="5" color="orange.600" mr="2" />
+                    <Text fontSize="sm" color="orange.600" fontWeight="medium">
+                      Cancelled at: {new Date(ride.cancellationTime || Date.now()).toLocaleTimeString()}
+                    </Text>
+                  </HStack>
+
+                  {ride.cancellationReason && (
+                    <HStack alignItems="center">
+                      <Icon as={Ionicons} name="information-circle-outline" size="5" color="gray.600" mr="2" />
+                      <VStack flex={1}>
+                        <Text fontSize="xs" color="gray.500">Cancellation Reason</Text>
+                        <Text fontSize="sm" color="gray.700">
+                          {ride.cancellationReason}
+                        </Text>
+                      </VStack>
+                    </HStack>
+                  )}
+                </VStack>
+              </Box>
+
+              <Text fontSize="sm" color="gray.600" mb="4">
+                We apologize for the inconvenience. The driver had to cancel this ride. 
+                Would you like to find another ride?
+              </Text>
+
+              <VStack space="3">
+                <Button
+                  onPress={() => navigation.navigate('SearchRide')}
+                  bg="black"
+                  _text={{ color: 'white', fontWeight: 'bold' }}
+                  rounded="full"
+                  leftIcon={<Icon as={Ionicons} name="search-outline" size="sm" color="white" />}
+                >
+                  Find New Ride
+                </Button>
+
+                <Button
+                  onPress={() => {
+                    Linking.openURL('mailto:support@yourapp.com?subject=Cancelled Ride Report');
+                  }}
+                  variant="outline"
+                  borderColor="gray.300"
+                  _text={{ color: 'gray.700' }}
+                  rounded="full"
+                  leftIcon={<Icon as={Ionicons} name="mail-outline" size="sm" color="gray.700" />}
+                >
+                  Contact Support
+                </Button>
+              </VStack>
+            </Box>
+          </Animated.View>
         );
       case RideStates.NOT_JOINED:
         return (
@@ -1218,7 +1332,7 @@ const RideDetailsScreen = () => {
               </Text>
               <Button
                 onPress={cancelRequest}
-                bg="gray.400"
+                bg="black"
                 _text={{ color: 'white', fontWeight: 'bold' }}
                 rounded="full"
                 mt="4"
@@ -1253,7 +1367,7 @@ const RideDetailsScreen = () => {
             <VStack space={4}>
               <Button
                 onPress={cancelRideAsPassenger}
-                bg="red.600"
+                bg="black"
                 _text={{ color: 'white', fontWeight: 'bold' }}
                 rounded="full"
               >
@@ -1430,7 +1544,7 @@ const RideDetailsScreen = () => {
                       Distance
                     </Text>
                     <Text fontSize="sm" fontWeight="semibold">
-                      {totalDistance}
+                      {totalDistance}km
                     </Text>
                   </HStack>
                   <HStack justifyContent="space-between">
@@ -1452,10 +1566,14 @@ const RideDetailsScreen = () => {
                 </VStack>
               </Box>
               <Button
-                onPress={() => navigation.navigate('RateRide', { rideId: rideDetails.id })}
+                onPress={() => navigation.navigate('RateRide', { 
+                  rideId: rideDetails.id,
+                  driverId: rideDetails.vehicleDto.driverId
+                })}
                 bg="black"
                 _text={{ color: 'white', fontWeight: 'bold' }}
                 rounded="full"
+                leftIcon={<Icon as={Ionicons} name="star" size="sm" color="white" />}
               >
                 Rate Your Ride
               </Button>
@@ -1515,10 +1633,10 @@ const RideDetailsScreen = () => {
   useEffect(() => {
     const fetchDriverReviews = async () => {
       try {
-        if (rideDetails?.vehicleDto?.driverId) {
+        if (rideDetails?.vehicleDto?.riderId) {
           const token = await AsyncStorage.getItem('userToken');
           const response = await axios.get(
-            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/review/getByDriver?driverId=${rideDetails.vehicleDto.driverId}`,
+            `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/review/getByDriver?driverId=${rideDetails.vehicleDto.riderId}`,
             {
               headers: { Authorization: `Bearer ${token}` }
             }
@@ -1530,8 +1648,10 @@ const RideDetailsScreen = () => {
       }
     };
 
-    fetchDriverReviews();
-  }, [rideDetails?.vehicleDto?.driverId]);
+    if (rideDetails?.vehicleDto?.riderId) {
+      fetchDriverReviews();
+    }
+  }, [rideDetails?.vehicleDto?.riderId]);
 
   // Render loading indicator
   if (loading) {

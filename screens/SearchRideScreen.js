@@ -111,23 +111,45 @@ const saveSearchHistory = async (searchParams) => {
     const token = await AsyncStorage.getItem('userToken');
     const passengerId = await AsyncStorage.getItem('passengerId');
 
-    await axios.post(
-      'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/searchHistory/add',
-      {
-        passengerId: Number(passengerId),
-        latitude: searchParams.pickupLocation.latitude,
-        longitude: searchParams.pickupLocation.longitude,
-        minRadiusKm: 0.0,
-        maxRadiusKm: searchParams.searchRadius,
-        searchType: "searchRidesWithinRadius",
-        searchTimestamp: new Date().toISOString()
+    // Create the request URL with query parameters
+    const baseUrl = 'http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/searchHistory/add';
+    const queryParams = new URLSearchParams({
+      passengerId: Number(passengerId),
+      latitude: searchParams.pickupLocation.latitude,
+      longitude: searchParams.pickupLocation.longitude,
+      source: searchParams.pickupLocation.address,
+      destination: searchParams.dropLocation.address,
+      minRadiusKm: '0.0',
+      maxRadiusKm: '10.0',
+      searchType: 'searchRidesWithinRadius'
+    });
+
+    const url = `${baseUrl}?${queryParams.toString()}`;
+
+    const response = await axios({
+      method: 'post',
+      url: url,
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
-      {
-        headers: { Authorization: `Bearer ${token}` }
+      // Disable redirect following
+      maxRedirects: 0,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400; // Accept 2xx and 3xx status codes
       }
-    );
+    });
+
+    console.log('Search history saved successfully:', response.data);
   } catch (error) {
-    console.error('Error saving search history:', error);
+    if (error.response) {
+      console.error('Error response:', error.response.status, error.response.data);
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+    } else {
+      console.error('Error saving search history:', error.message);
+    }
   }
 };
 
@@ -188,16 +210,21 @@ const SearchRideScreen = () => {
       }
 
       const token = await AsyncStorage.getItem('userToken');
-      const response = await axios.get(
-        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/searchHistory/recent?passengerId=${passengerId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      if (token) {
+        const response = await axios.get(
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/searchHistory/recent?passengerId=${passengerId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
 
-      if (response.data && Array.isArray(response.data)) {
-        setRecentSearches(response.data);
-        setHasSearchHistory(response.data.length > 0);
+        if (response.data && Array.isArray(response.data)) {
+          const validSearches = response.data.filter(search => 
+            search.source !== null && search.destination !== null
+          );
+          setRecentSearches(validSearches);
+          setHasSearchHistory(validSearches.length > 0);
+        }
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
@@ -232,58 +259,70 @@ const SearchRideScreen = () => {
   };
 
   const handleSearch = async () => {
-    if (!pickupLocation.address || !dropLocation.address) {
-      Alert.alert('Error', 'Please select both pickup and drop-off locations.');
-      return;
+    if (!pickupLocation.address || !dropLocation.address || 
+        !pickupLocation.coordinates || !dropLocation.coordinates) {
+        Alert.alert('Error', 'Please select both pickup and drop-off locations.');
+        return;
     }
 
     setLoading(true);
     try {
-      const formattedDate = format(selectedDate, 'yyyy-MM-dd');
-      const formattedTime = `${selectedTime}:00`;
-      const formattedDateTime = `${formattedDate}T${formattedTime}`;
+        const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+        const formattedTime = `${selectedTime}:00`;
+        const formattedDateTime = `${formattedDate}T${formattedTime}`;
 
-      await storeLocationDetails({
-        startLocation: pickupLocation.address,
-        startLatitude: pickupLocation.coordinates.lat,
-        startLongitude: pickupLocation.coordinates.lng,
-        endLocation: dropLocation.address,
-        endLatitude: dropLocation.coordinates.lat,
-        endLongitude: dropLocation.coordinates.lng,
-        rideDate: formattedDate,
-        rideTime: formattedTime
-      });
+        // Save search history first
+        const searchHistoryParams = {
+            pickupLocation: {
+                latitude: pickupLocation.coordinates.lat,
+                longitude: pickupLocation.coordinates.lng,
+                address: pickupLocation.address
+            },
+            dropLocation: {
+                address: dropLocation.address
+            },
+            searchRadius: 10
+        };
 
-      await saveRecentSearches();
+        // Only save search history once with complete data
+        await saveSearchHistory(searchHistoryParams);
 
-      // Save search history
-      await saveSearchHistory({
-        pickupLocation: pickupLocation.coordinates,
-        searchRadius: 10 // Replace with actual search radius
-      });
+        await storeLocationDetails({
+            startLocation: pickupLocation.address,
+            startLatitude: pickupLocation.coordinates.lat,
+            startLongitude: pickupLocation.coordinates.lng,
+            endLocation: dropLocation.address,
+            endLatitude: dropLocation.coordinates.lat,
+            endLongitude: dropLocation.coordinates.lng,
+            rideDate: formattedDate,
+            rideTime: formattedTime
+        });
 
-      navigation.navigate('RideList', {
-        pickupLocation: pickupLocation.address,
-        dropLocation: dropLocation.address,
-        pickupCoords: {
-          lat: Number(pickupLocation.coordinates.lat),
-          lng: Number(pickupLocation.coordinates.lng)
-        },
-        dropCoords: {
-          lat: Number(dropLocation.coordinates.lat),
-          lng: Number(dropLocation.coordinates.lng)
-        },
-        rideDate: formattedDate,
-        rideTime: formattedTime,
-        rideDateTime: formattedDateTime,
-        isRecurring: isRecurring,
-        recurringDays: selectedDays,
-      });
+        // Save recent searches
+        await saveRecentSearches();
+
+        navigation.navigate('RideList', {
+            pickupLocation: pickupLocation.address,
+            dropLocation: dropLocation.address,
+            pickupCoords: {
+                lat: Number(pickupLocation.coordinates.lat),
+                lng: Number(pickupLocation.coordinates.lng)
+            },
+            dropCoords: {
+                lat: Number(dropLocation.coordinates.lat),
+                lng: Number(dropLocation.coordinates.lng)
+            },
+            rideDate: formattedDate,
+            rideTime: formattedTime,
+            rideDateTime: formattedDateTime,
+            isRecurring: isRecurring,
+            recurringDays: selectedDays,
+        });
     } catch (error) {
-      console.error('Error during search:', error);
-      Alert.alert('Error', 'Failed to process search. Please try again.');
+        console.error('Error during search:', error);
+        Alert.alert('Error', 'Failed to process search. Please try again.');
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 

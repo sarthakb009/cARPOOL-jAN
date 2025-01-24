@@ -467,7 +467,7 @@ const ProfileScreen = () => {
             <VStack>
               <Text fontSize="xs" color="gray.500" fontWeight="medium">LOCATION</Text>
               <Text fontSize="sm" fontWeight="600" color="gray.700">
-                New York
+                {userData.country || 'United States'}
               </Text>
             </VStack>
           </HStack>

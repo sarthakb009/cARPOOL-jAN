@@ -22,7 +22,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { styles, CustomInput, CustomButton, CarouselItem, RecentSearchItem } from '../components/sharedComponents';
+import { styles, CustomInput, CustomButton, CarouselItem } from '../components/sharedComponents';
 import TimePickerModal from './TimePickerModal';
 import { format, parse, addMinutes } from 'date-fns';
 import Calendar from 'react-native-calendar-picker';
@@ -46,6 +46,36 @@ const carouselItems = [
     icon: "gift-outline",
   },
 ];
+
+const RecentSearchItem = ({ search, onPress }) => (
+  <TouchableOpacity onPress={onPress}>
+    <Box
+      bg="white"
+      borderRadius="md"
+      shadow={1}
+      p={4}
+      mr={3}
+      alignItems="center"
+      justifyContent="center"
+      width={250}
+    >
+      <HStack space={3} alignItems="center" flex={1}>
+        <Icon as={Ionicons} name="location-outline" size="sm" color="gray.500" />
+        <VStack flex={1}>
+          <Text fontSize="md" fontWeight="bold" numberOfLines={1} ellipsizeMode="tail">
+          {`${search.source} → ${search.destination}`}
+          </Text>
+          <Text fontSize="xs" color="gray.500" numberOfLines={1} ellipsizeMode="tail">
+            {new Date(search.searchTimestamp).toLocaleDateString()}
+          </Text>
+          <Text fontSize="xs" color="gray.500" numberOfLines={1} ellipsizeMode="tail">
+            {`${search.latitude}, ${search.longitude}`}
+          </Text>
+        </VStack>
+      </HStack>
+    </Box>
+  </TouchableOpacity>
+);
 
 const OfferRideScreen = () => {
   const toast = useToast();
@@ -89,6 +119,9 @@ const OfferRideScreen = () => {
   const [tempStartDate, setTempStartDate] = useState(null);
   const [tempEndDate, setTempEndDate] = useState(null);
 
+  // Update the state variable to include hasSearchHistory
+  const [hasSearchHistory, setHasSearchHistory] = useState(false);
+
   useEffect(() => {
     const checkProfile = async () => {
       try {
@@ -124,16 +157,10 @@ const OfferRideScreen = () => {
     if (route.params && route.params.address) {
       if (route.params.isFrom) {
         setFrom(route.params.address);
-        setFromCoords({
-          latitude: route.params.latitude,
-          longitude: route.params.longitude
-        });
+        setFromCoords(route.params.coordinates);
       } else {
         setTo(route.params.address);
-        setToCoords({
-          latitude: route.params.latitude,
-          longitude: route.params.longitude
-        });
+        setToCoords(route.params.coordinates);
       }
     }
   }, [route.params]);
@@ -161,14 +188,27 @@ const OfferRideScreen = () => {
 
   const loadRecentSearches = async () => {
     try {
-      const searches = await AsyncStorage.getItem('recentSearches');
-      if (searches) {
-        const parsedSearches = JSON.parse(searches);
-        const validSearches = parsedSearches.filter(search => search.from && search.to);
-        setRecentSearches(validSearches);
+      const passengerId = await AsyncStorage.getItem('passengerId');
+      if (!passengerId) {
+        setHasSearchHistory(false);
+        return;
+      }
+
+      const token = await AsyncStorage.getItem('userToken');
+      const response = await axios.get(
+        `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/searchHistory/recent?passengerId=${passengerId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (response.data && Array.isArray(response.data)) {
+        setRecentSearches(response.data);
+        setHasSearchHistory(response.data.length > 0);
       }
     } catch (error) {
       console.error('Error loading recent searches:', error);
+      setHasSearchHistory(false);
     }
   };
 
@@ -385,12 +425,24 @@ const OfferRideScreen = () => {
         switch(rideType) {
           case 'normal':
             // Navigate to RideDetails for normal rides
-            navigation.replace('RideDetails', {
-              rideId: createdRideId,
-              isDriver: true,
-              rideType: rideType,
-              initialFetch: true
+            navigation.replace('ManageRide', {
+              ride: {
+                id: createdRideId,
+                source: rideData.source,
+                destination: rideData.destination,
+                rideDate: rideData.rideDate,
+                rideScheduledStartTime: rideData.rideScheduledStartTime,
+                rideScheduledEndTime: rideData.rideScheduledEndTime,
+                status: rideData.status,
+                driverDetails: rideData.driverDetails,
+                vehicleDto: rideData.vehicleDto,
+                sourceLatitude: rideData.sourceLatitude,
+                sourceLongitude: rideData.sourceLongitude,
+                destinationLatitude: rideData.destinationLatitude,
+                destinationLongitude: rideData.destinationLongitude,
+              }
             });
+          
             break;
 
           case 'recurring':
@@ -869,8 +921,8 @@ const OfferRideScreen = () => {
         </ScrollView>
       </Box>
 
-      {/* Recent Searches Carousel */}
-      {recentSearches.length > 0 && (
+      {/* Recent Searches Carousel - Only show if user has search history */}
+      {hasSearchHistory && recentSearches.length > 0 && (
         <Box mt={6}>
           <Text fontWeight="bold" fontSize="lg" color="black" mb={2}>Recent Searches</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>

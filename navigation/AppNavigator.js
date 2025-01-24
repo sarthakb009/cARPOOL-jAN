@@ -36,6 +36,7 @@ import RecurringRidesScreen from '../screens/RecurringRideScreen';
 import ScheduleRideScreen from '../screens/ScheduleRideScreen';
 import RecurringRidesListScreen from '../screens/RecurringRidesListScreen';
 import ScheduledRidesListScreen from '../screens/ScheduledRidesListScreen';
+import RateRideScreen from '../screens/RateRideScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -71,6 +72,7 @@ const ProfileStack = () => {
           component={ScheduledRidesListScreen}
           options={{ headerShown: false }}
         />
+
       {/* Add other profile-related screens here */}
     </Stack.Navigator>
   );
@@ -184,6 +186,11 @@ const AppNavigator = () => {
         <Stack.Screen
           name="RideHistory"
           component={RideHistoryScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="RateRide"
+          component={RateRideScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

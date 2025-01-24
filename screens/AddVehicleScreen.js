@@ -171,6 +171,9 @@ const DocumentUploadModal = ({ isVisible, onClose, onUpload, loading }) => (
 );
 
 const AddVehicleScreen = ({ navigation, route }) => {
+  // Add new state for selected documents
+  const [selectedDocuments, setSelectedDocuments] = useState({});
+  
   const [vehicleData, setVehicleData] = useState({
     vehicleNumber: '',
     drivingLicense: '',
@@ -239,16 +242,113 @@ const AddVehicleScreen = ({ navigation, route }) => {
     setVehicleData(prev => ({ ...prev, [name]: value }));
   };
 
+  // const handleDocumentUpload = async (documentType) => {
+  //   try {
+  //     console.log('Starting document selection process...');
+
+  //     const result = await DocumentPicker.getDocumentAsync({
+  //       type: ['application/pdf', 'image/*'],
+  //       copyToCacheDirectory: true,
+  //     });
+
+  //     console.log('Document picker result:', result);
+
+  //     if (!result.canceled && result.assets && result.assets[0]) {
+  //       const file = result.assets[0];
+        
+  //       // Store selected document in state without uploading
+  //       setSelectedDocuments(prev => ({
+  //         ...prev,
+  //         [documentType]: file
+  //       }));
+
+  //       // Update documents display
+  //       setDocuments(prev => [...prev.filter(doc => doc.type !== documentType), {
+  //         id: `temp_${Date.now()}`,
+  //         name: file.name,
+  //         type: documentType,
+  //         status: 'Selected',
+  //         uploadDate: new Date().toISOString()
+  //       }]);
+
+  //       setModalVisible(false);
+  //       toast.show({
+  //         title: "Success",
+  //         description: "Document selected successfully!",
+  //         status: "success"
+  //       });
+  //     }
+  //   } catch (err) {
+  //     console.error('Error selecting document:', err);
+  //     toast.show({
+  //       title: "Selection Error",
+  //       description: "Failed to select document",
+  //       status: "error"
+  //     });
+  //   }
+  // };
+
+  const uploadDocuments = async (vehicleId) => {
+    const token = await AsyncStorage.getItem('userToken');
+    const driverId = await AsyncStorage.getItem('driverId');
+
+    for (const [documentType, file] of Object.entries(selectedDocuments)) {
+      try {
+        // Generate a unique documentId
+        const uniqueDocId = `${Date.now()}_${file.name}`;
+
+        // Create document record
+        const createResponse = await axios.post(
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/documents/add?driverId=${driverId}&vehicleId=${vehicleId}`,
+          {
+            documentType: documentType,
+            documentId: uniqueDocId
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const documentId = createResponse.data;
+
+        // Upload file
+        const formData = new FormData();
+        formData.append('file', {
+          uri: file.uri,
+          type: file.mimeType,
+          name: file.name,
+        });
+
+        await axios.put(
+          `http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/documents/uploadFile?documentId=${documentId}&driverId=${driverId}`,
+          formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              Authorization: `Bearer ${token}`,
+            }
+          }
+        );
+      } catch (error) {
+        console.error('Error uploading document:', error);
+        throw error;
+      }
+    }
+  };
+
   const handleSubmit = async () => {
     // Check for required documents
     const requiredDocTypes = DOCUMENT_TYPES.filter(doc => doc.required).map(doc => doc.type);
-    const uploadedDocTypes = documents.map(doc => doc.type);
-    const missingRequiredDocs = requiredDocTypes.filter(type => !uploadedDocTypes.includes(type));
+    const selectedDocTypes = Object.keys(selectedDocuments);
+    const missingRequiredDocs = requiredDocTypes.filter(type => !selectedDocTypes.includes(type));
 
     if (missingRequiredDocs.length > 0) {
       toast.show({
         title: "Missing Documents",
-        description: "Please upload all required documents before submitting",
+        description: "Please select all required documents before submitting",
         status: "warning"
       });
       return;
@@ -278,28 +378,30 @@ const AddVehicleScreen = ({ navigation, route }) => {
         vehicletype: vehicleData.type,
         capacity: vehicleData.type === 'Bike' ? 1 : parseInt(vehicleData.capacity) || null,
         vehicleCapacity: vehicleData.type === 'Bike' ? 1 : parseInt(vehicleData.capacity) || null,
-        year: vehicleData.year ? parseInt(vehicleData.year) : null // Convert year to integer
+        year: vehicleData.year ? parseInt(vehicleData.year) : null
       };
 
+      let responseVehicleId;
       if (vehicleId) {
         await axios.put(`http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/vehicle/edit?id=${vehicleId}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        toast.show({
-          title: "Success",
-          description: "Vehicle updated successfully",
-          status: "success"
-        });
+        responseVehicleId = vehicleId;
       } else {
-        await axios.post('http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/vehicle/create', payload, {
+        const response = await axios.post('http://ec2-3-104-95-118.ap-southeast-2.compute.amazonaws.com:8081/vehicle/create', payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        toast.show({
-          title: "Success",
-          description: "Vehicle added successfully",
-          status: "success"
-        });
+        responseVehicleId = response.data.id; // Adjust this based on your API response structure
       }
+
+      // Upload documents after vehicle creation/update
+      await uploadDocuments(responseVehicleId);
+
+      toast.show({
+        title: "Success",
+        description: vehicleId ? "Vehicle updated successfully" : "Vehicle added successfully",
+        status: "success"
+      });
       navigation.goBack();
     } catch (error) {
       console.error('Error submitting vehicle:', error);

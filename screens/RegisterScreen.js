@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { ScrollView, Animated } from 'react-native';
+import { ScrollView, Animated, FlatList, Modal as RNModal } from 'react-native';
 import { Box, Heading, VStack, FormControl, Input, Button as ChakraButton, Text, HStack, Icon, Center,Pressable, Select, CheckIcon } from 'native-base';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CountryPicker } from 'react-native-country-codes-picker';
 
 const RegisterScreen = ({ navigation }) => {
   const [username, setUsername] = useState('');
@@ -16,16 +17,10 @@ const RegisterScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(100)).current;
   const [errorMessage, setErrorMessage] = useState('');
-  const [country, setCountry] = useState('');
-
-  const countries = [
-    { code: 'AU', name: 'Australia' },
-    { code: 'IN', name: 'India' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'CA', name: 'Canada' },
-    // Add more countries as needed
-  ];
+  const [country, setCountry] = useState(''); // Store selected country
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState('');
+  const [selectedCountryCode, setSelectedCountryCode] = useState('');
 
   const handleRegister = async () => {
     if (phone.length !== 10) {
@@ -164,32 +159,89 @@ const RegisterScreen = ({ navigation }) => {
             />
           </FormControl>
           <FormControl>
-            <Select
-              selectedValue={country}
-              minWidth="200"
-              accessibilityLabel="Choose Country"
-              placeholder="Select Your Country"
-              _selectedItem={{
-                bg: "coolGray.100",
-                endIcon: <CheckIcon size="5" color="black" />
-              }}
-              bg="white"
-              borderRadius="md"
-              borderColor="coolGray.300"
-              px="4"
-              py="3"
-              _hover={{ bg: "coolGray.100" }}
-              _focus={{ bg: "coolGray.100" }}
-              onValueChange={itemValue => setCountry(itemValue)}
+            <Pressable
+              onPress={() => setShowCountryPicker(true)}
             >
-              {countries.map((country) => (
-                <Select.Item 
-                  key={country.code} 
-                  label={country.name} 
-                  value={country.name}
-                />
-              ))}
-            </Select>
+              <Box
+                bg="white"
+                borderRadius="md"
+                borderColor="coolGray.300"
+                borderWidth={1}
+                px="4"
+                py="3"
+                _hover={{ bg: "coolGray.100" }}
+              >
+                <HStack space={2} alignItems="center">
+                  <Text color={selectedCountry ? "coolGray.800" : "coolGray.400"}>
+                    {selectedCountry || "Select Your Country"}
+                  </Text>
+                  {selectedCountryCode && (
+                    <Text color="coolGray.500">
+                      ({selectedCountryCode})
+                    </Text>
+                  )}
+                  <Icon
+                    as={Ionicons}
+                    name="chevron-down"
+                    size="sm"
+                    color="coolGray.500"
+                    ml="auto"
+                  />
+                </HStack>
+              </Box>
+            </Pressable>
+
+            {/* Country Picker Modal */}
+            <CountryPicker
+              show={showCountryPicker}
+              // when picked, show in custom text format
+              pickerButtonOnPress={(item) => {
+                setSelectedCountry(item.name.en);
+                setSelectedCountryCode(item.dial_code);
+                setCountry(item.name.en);
+                setShowCountryPicker(false);
+              }}
+              style={{
+                modal: {
+                  height: 500,
+                  backgroundColor: 'white'
+                },
+                dialCode: {
+                  color: '#000000'
+                },
+                countryName: {
+                  color: '#000000'
+                },
+                searchInput: {
+                  color: '#000000',
+                  backgroundColor: '#F4F4F5',
+                  borderRadius: 8,
+                  height: 45,
+                  marginBottom: 16,
+                  paddingLeft: 16
+                },
+                textInput: {
+                  height: 45,
+                  backgroundColor: '#F4F4F5',
+                  borderRadius: 8,
+                  paddingLeft: 16,
+                  color: '#000000'
+                },
+                line: {
+                  backgroundColor: '#E4E4E7'
+                },
+                itemsList: {
+                  backgroundColor: 'white'
+                }
+              }}
+              onBackdropPress={() => setShowCountryPicker(false)}
+              enableModalAvoiding={true}
+              searchPlaceholder="Search country..."
+              showCloseButton={true}
+              showModalTitle={true}
+              modalTitle="Select Country"
+              lang="en"
+            />
           </FormControl>
           <FormControl>
             <Input
@@ -249,38 +301,55 @@ const RegisterScreen = ({ navigation }) => {
         </VStack>
       </Box>
       {showError && (
-        <Animated.View
-          style={{
-            position: 'absolute',
-            bottom: 20,
-            left: 20,
-            right: 20,
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }}
-        >
-          <Box bg="red.500"
+      <Animated.View
+        style={{
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          right: 16,
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }}
+      >
+        <Pressable onPress={hideErrorMessage}>
+          <Box
+            bg="white"
             p="4"
-            rounded="2xl"
+            rounded="xl"
             flexDirection="row"
             alignItems="center"
-            shadow={5}
+            shadow="3"
+            borderLeftWidth={4}
+            borderLeftColor="red.500"
           >
-            <Center w="60px" h="60px" mr="4">
-              <Text fontSize="4xl">😕</Text>
-            </Center>
-            <VStack flex={1}>
-              <Text color="white" fontWeight="bold" fontSize="lg">
-                Registration Failed
-              </Text>
-              <Text color="white" fontSize="sm">
-                {errorMessage || "An unexpected error occurred. Please try again."}
+            <Icon
+              as={Ionicons}
+              name="alert-circle"
+              size="md"
+              color="red.500"
+              mr="3"
+            />
+            <VStack flex={1} space={0.5}>
+              <Text color="coolGray.800" fontWeight="medium" fontSize="sm">
+                {errorMessage || "Something went wrong"} 
               </Text>
             </VStack>
-            <Icon as={Ionicons} name="close-circle-outline" size="sm" color="white" onPress={hideErrorMessage} />
+            <Pressable
+              onPress={hideErrorMessage}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Icon
+                as={Ionicons}
+                name="close"
+                size="sm"
+                color="coolGray.500"
+              />
+            </Pressable>
           </Box>
-        </Animated.View>
-      )}
+        </Pressable>
+      </Animated.View>
+    )}
+
     </ScrollView>
   );
 };
