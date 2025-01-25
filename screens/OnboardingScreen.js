@@ -387,40 +387,49 @@ const OnboardingScreen = ({ route, navigation }) => {
     <Animated.View
       style={{
         position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
+        bottom: 16,
+        left: 16,
+        right: 16,
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }],
       }}
     >
-      <Box
-        bg="red.500"
-        p="4"
-        rounded="2xl"
-        flexDirection="row"
-        alignItems="center"
-        shadow={5}
-      >
-        <Center w="60px" h="60px" mr="4">
-          <Text fontSize="4xl">⚠️</Text>
-        </Center>
-        <VStack flex={1}>
-          <Text color="white" fontWeight="bold" fontSize="lg">
-            Age Restriction
-          </Text>
-          <Text color="white" fontSize="sm">
-            {ageErrorMessage}
-          </Text>
-        </VStack>
-        <Icon 
-          as={Ionicons} 
-          name="close-circle-outline" 
-          size="sm" 
-          color="white" 
-          onPress={() => hideErrorAnimation()} 
-        />
-      </Box>
+      <Pressable onPress={hideErrorAnimation}>
+        <Box
+          bg="white"
+          p="4"
+          rounded="xl"
+          flexDirection="row"
+          alignItems="center"
+          shadow="3"
+          borderLeftWidth={4}
+          borderLeftColor="red.500"
+        >
+          <Icon
+            as={Ionicons}
+            name="alert-circle"
+            size="md"
+            color="red.500"
+            mr="3"
+          />
+          <VStack flex={1} space={0.5}>
+            <Text color="coolGray.800" fontWeight="medium" fontSize="sm">
+              {ageErrorMessage}
+            </Text>
+          </VStack>
+          <Pressable
+            onPress={hideErrorAnimation}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Icon
+              as={Ionicons}
+              name="close"
+              size="sm"
+              color="coolGray.500"
+            />
+          </Pressable>
+        </Box>
+      </Pressable>
     </Animated.View>
   );
 

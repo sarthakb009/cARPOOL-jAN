@@ -425,7 +425,7 @@ const OfferRideScreen = () => {
         switch(rideType) {
           case 'normal':
             // Navigate to RideDetails for normal rides
-            navigation.replace('ManageRide', {
+            navigation.navigate('ManageRide', {
               ride: {
                 id: createdRideId,
                 source: rideData.source,
@@ -447,14 +447,14 @@ const OfferRideScreen = () => {
 
           case 'recurring':
             // Navigate to RideHistory with Recurring Rides tab
-            navigation.replace('RideHistory', {
+            navigation.navigate('RideHistory', {
               initialTab: 2 // Index for Recurring Rides tab
             });
             break;
 
           case 'scheduled':
             // Navigate to RideHistory with Scheduled Rides tab
-            navigation.replace('RideHistory', {
+            navigation.navigate('RideHistory', {
               initialTab: 3 // Index for Scheduled Rides tab
             });
             break;

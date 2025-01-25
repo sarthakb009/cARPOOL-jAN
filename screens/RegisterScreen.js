@@ -33,6 +33,16 @@ const RegisterScreen = ({ navigation }) => {
       return;
     }
 
+    if (!username) {
+      showErrorMessage("Please enter a username");
+      return;
+    } 
+
+    if (!email) {
+      showErrorMessage("Please enter an email");
+      return;
+    }
+
     setLoading(true);
     try {
       // Create the user with country
@@ -59,8 +69,17 @@ const RegisterScreen = ({ navigation }) => {
       // Pass both username and email to Onboarding
       navigation.replace('Onboarding', { username, email });
     } catch (error) {
-      console.error('Registration error:', error);
-      showErrorMessage(error?.response?.data?.message || "Registration failed. Please try again.");
+      // Detailed error logging
+      console.error('Full error object:', error);
+      console.error('Error response data:', error.response?.data);
+      console.error('Error response status:', error.response?.status);
+      console.error('Error message:', error.message);
+
+      // Get the error message from the response
+      const errorMessage = error.response?.data || error.message;
+      
+      // Show the actual error message from the server
+      showErrorMessage(errorMessage);
     } finally {
       setLoading(false);
     }
